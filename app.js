@@ -188,13 +188,17 @@ function renderDashboard() {
   document.querySelector("#dashboardContent").innerHTML = `
     ${state.samplesLoaded ? `<div class="card protocol"><div class="row"><div><p class="eyebrow">PREVIEW DATA</p><p class="tiny">Sample logs are loaded so you can explore the app. Clear them in Settings when you are ready to begin.</p></div><button class="secondary-button" data-go="settings">Settings</button></div></div>` : ""}
     <div class="card hero-card">
-      <div class="row"><div><p class="eyebrow" style="color:#ffe7e7">${phase()}</p><h2>${daysRemaining(state.settings.endDate)} days to Blast Fest</h2><p class="muted">${daysRemaining(state.settings.miniEventDate)} days to Seattle · Day ${getDayNumber()} of 45</p></div><div class="ring" style="--value:${snatched}" data-label="${snatched}"></div></div>
-      <div class="spacer"></div><p><strong>Today's mission:</strong> ${todayFocus(log)}</p>
+      <div class="row"><div><p class="eyebrow" style="color:#f7d9d7">${phase()} · DAY ${getDayNumber()} OF 45</p><h2 class="hero-title">Blast Fest<br>Snatched</h2><p class="muted hero-subtitle">Your soft-glam accountability era. Basics first, then enjoy your life.</p></div><div><div class="ring" style="--value:${snatched}" data-label="${snatched}"></div><p class="tiny" style="text-align:center;margin-top:7px">SNATCHED SCORE</p></div></div>
     </div>
+    <div class="card mission-card"><p class="eyebrow">TODAY'S MISSION</p><h3 style="margin-top:5px">${todayFocus(log)}</h3><div class="spacer"></div><button class="button" data-go="today">Start today's check-in</button></div>
     ${protocolCard()}
+    <div class="event-grid">
+      <div class="event-card"><p class="eyebrow">SEATTLE CONCERT</p><strong>${daysRemaining(state.settings.miniEventDate)} days</strong><span class="tiny">${formatDate(state.settings.miniEventDate)} · mini glow-up</span></div>
+      <div class="event-card"><p class="eyebrow">BLAST FEST</p><strong>${daysRemaining(state.settings.endDate)} days</strong><span class="tiny">${formatDate(state.settings.endDate)} · main event</span></div>
+    </div>
     <div class="grid-2">
-      <div class="card"><p class="eyebrow">NEXT CHECK-IN</p><h2>Day ${check}</h2><p class="muted">${formatDate(challengeDate(check))} · ${daysRemaining(challengeDate(check))} days</p></div>
-      <div class="card"><p class="eyebrow">STREAK</p><h2>${streak()} days</h2><p class="muted">${scoreLabel(snatched)}</p></div>
+      <div class="card countdown-card"><p class="eyebrow">NEXT CHECK-IN</p><h2>Day ${check}</h2><p class="muted">${formatDate(challengeDate(check))} · ${daysRemaining(challengeDate(check))} days</p></div>
+      <div class="card countdown-card"><p class="eyebrow">CURRENT STREAK</p><h2>${streak()} days</h2><p class="muted">${scoreLabel(snatched)}</p></div>
     </div>
     <div class="card stack">
       <div class="row"><h3>Today's essentials</h3><button class="secondary-button" data-go="today">Log today</button></div>
@@ -269,8 +273,8 @@ function feedbackHTML(log) {
 function renderNutrition() {
   const log = dayLog(), meals = log.meals || [];
   document.querySelector("#nutritionContent").innerHTML = `
-    <div class="card"><div class="row"><div><p class="eyebrow">TODAY'S TOTAL</p><h2>${num(log.calories)} calories</h2></div><span class="pill">${num(log.protein)}g protein</span></div>${progressRow("Protein",log.protein,state.settings.proteinGoal,"g")}</div>
-    <div class="card"><div class="row"><h3>Quick-add favorites</h3><button class="secondary-button" data-action="custom-meal">Custom meal</button></div><div class="spacer"></div><div class="stack">${QUICK_MEALS.map((m,i)=>`<button class="quick-add" data-quick-meal="${i}"><strong>${m[0]}</strong><br><span class="tiny">${m[2]} cal · ${m[3]}g protein · ${m[4]}g fiber</span></button>`).join("")}</div></div>
+    <div class="card hero-card"><p class="eyebrow" style="color:#f7d9d7">TODAY'S NOURISHMENT</p><h2>${num(log.calories)} calories</h2><p class="muted">Build the plate around protein. Keep the rest simple.</p><div class="spacer"></div>${progressRow("Protein",log.protein,state.settings.proteinGoal,"g")}</div>
+    <div class="card"><div class="row"><div><p class="eyebrow">SAVED FAVORITES</p><h3>Whole Foods quick add</h3></div><button class="secondary-button" data-action="custom-meal">+ Custom</button></div><div class="spacer"></div><div class="quick-scroll">${QUICK_MEALS.map((m,i)=>`<button class="quick-add" data-quick-meal="${i}"><span class="meal-art">✦</span><strong>${m[0]}</strong><div class="chip-row"><span class="meal-chip">${m[2]} cal</span><span class="meal-chip">${m[3]}g P</span><span class="meal-chip">${m[4]}g fiber</span></div></button>`).join("")}</div></div>
     <div class="card"><h3>Meals logged today</h3>${meals.length ? meals.map((m,i)=>`<div class="meal-item row"><div><strong>${m.name}</strong><div class="tiny">${m.type} · ${m.calories} cal · ${m.protein}g protein · ${m.fiber}g fiber</div></div><button class="secondary-button" data-remove-meal="${i}">Remove</button></div>`).join("") : `<div class="empty">No meals logged yet. One tap is enough.</div>`}</div>
     <div class="card"><p class="eyebrow">MEAL PHOTO</p><h3>Optional visual food log</h3><div class="spacer"></div><input type="file" accept="image/*" data-photo="meal-${todayKey()}"><p class="tiny">Photos stay on this device when browser storage allows it.</p></div>
   `;
@@ -352,8 +356,13 @@ function badgesHTML() {
 }
 
 function renderCheckins() {
-  const current=getDayNumber();
+  const current=getDayNumber(), completed=CHECKIN_DAYS.map(day=>({day,...(state.checkins[day]||{})})).filter(x=>num(x.weight)), first=completed[0], latest=completed.at(-1);
   document.querySelector("#checkinContent").innerHTML = `
+    <div class="card hero-card"><p class="eyebrow" style="color:#f7d9d7">EDITORIAL WELLNESS REPORT</p><h2>Your official glow-up log</h2><p class="muted">Check in every nine days. Observe the pattern without letting scale noise run the day.</p></div>
+    <div class="card"><div class="row"><div><p class="eyebrow">WHAT CHANGED?</p><h3>Official transformation snapshot</h3></div><span class="pill">RENPHO + TAPE</span></div><div class="compare-grid">
+      <div class="compare-card"><span class="tiny">Official weight</span><strong>${latest?.weight || "—"} lbs</strong><span class="tiny">${first&&latest ? `${round(latest.weight-first.weight,1)} lbs since Day ${first.day}` : "Log Day 1 to begin"}</span></div>
+      <div class="compare-card"><span class="tiny">Waist</span><strong>${latest?.waist || "—"} in</strong><span class="tiny">${first?.waist&&latest?.waist ? `${round(latest.waist-first.waist,1)} in since Day ${first.day}` : "Measurements tell the story"}</span></div>
+    </div></div>
     <div class="card"><p>Official check-ins are the only weights used for trends. Daily scale noise is not the assignment.</p><div class="spacer"></div><button class="secondary-button" data-action="random-weight">Log a private random weigh-in</button></div>
     <div class="card"><h3>Official schedule</h3>${CHECKIN_DAYS.map(day=>`<div class="checkin-item row"><div><strong>Day ${day} · ${formatDate(challengeDate(day))}</strong><div class="tiny">${state.checkins[day]?.weight ? `${state.checkins[day].weight} lbs · waist ${state.checkins[day].waist || "—"}` : day===current ? "Your official check-in is ready." : "Not logged yet"}</div></div><button class="secondary-button" data-checkin="${day}">${state.checkins[day]?"Edit":"Open"}</button></div>`).join("")}</div>
     <div class="card"><h3>Private random weigh-ins</h3>${state.randomWeights.length ? state.randomWeights.map(x=>`<div class="checkin-item row"><span>${formatDate(x.date)}</span><strong>${x.weight} lbs</strong></div>`).join("") : `<div class="empty">None logged. This is intentionally not the main focus.</div>`}</div>
@@ -399,8 +408,9 @@ Please analyze my progress and tell me what to adjust.`;
 function renderCoach() {
   document.querySelector("#coachContent").innerHTML = `
     <div class="card hero-card"><p class="eyebrow" style="color:#ffe7e7">9-DAY REVIEW</p><h2>Patterns over perfection.</h2><p class="muted">Copy a clean summary into ChatGPT whenever you want a deeper coaching review.</p></div>
-    <div class="card"><div class="row"><h3>Weekly / 9-day summary</h3><button class="button" data-action="copy-summary">Copy Summary for ChatGPT</button></div><div class="spacer"></div><textarea id="summaryText" style="min-height:360px">${summary()}</textarea></div>
-    <div class="card"><p class="eyebrow">REMINDER</p><p>Weight, measurements, habits, and context belong together. Photos stay local to your device and are not pasted into the text report.</p></div>
+    <div class="card"><p class="eyebrow">YOUR PRIVATE COACH JOURNAL</p><h3 style="margin-top:5px">Weekly / 9-day summary</h3><p class="muted">One clear report. No overthinking required.</p><div class="spacer"></div><textarea id="summaryText" style="min-height:360px">${summary()}</textarea><div class="spacer"></div><button class="button" data-action="copy-summary">Copy summary for ChatGPT</button></div>
+    <div class="coach-note"><p class="eyebrow">COACHING PROMPT</p><p style="margin-top:5px">Paste your copied report into ChatGPT and ask for your top three priorities for the next nine days.</p></div>
+    <div class="card"><p class="eyebrow">A NOTE FOR THE JOURNEY</p><p>Weight, measurements, habits, and context belong together. Photos stay local to your device and are not pasted into the text report.</p></div>
   `;
 }
 
@@ -445,16 +455,16 @@ function coerce(input) {
 }
 
 document.addEventListener("click", e => {
-  const nav=e.target.closest("[data-nav]"), goButton=e.target.closest("[data-go]");
+  const nav=e.target.closest("[data-nav]"), goButton=e.target.closest("[data-go]"), quickMeal=e.target.closest("[data-quick-meal]"), removeMeal=e.target.closest("[data-remove-meal]"), checkin=e.target.closest("[data-checkin]"), microphone=e.target.closest("[data-mic]"), action=e.target.closest("[data-action]");
   if(nav) go(nav.dataset.nav); if(goButton) go(goButton.dataset.go);
   if(e.target.matches("[data-close]")) document.querySelector("#modal").close();
   if(e.target.matches("[data-habit]")) { dayLog().habits[e.target.dataset.habit]=e.target.checked; saveState(); render(); }
   if(e.target.matches("[data-exercise]")) { dayLog().exercises[e.target.dataset.exercise]=e.target.checked; saveState(); render(); }
-  if(e.target.matches("[data-quick-meal]")) addMeal(QUICK_MEALS[num(e.target.dataset.quickMeal)]);
-  if(e.target.matches("[data-remove-meal]")) { const log=dayLog(), meal=log.meals.splice(num(e.target.dataset.removeMeal),1)[0]; ["calories","protein","fiber","carbs","fat"].forEach((key,index)=>log[key]=Math.max(0,num(log[key])-num(meal[key]))); saveState(); render(); }
-  if(e.target.matches("[data-checkin]")) checkinModal(num(e.target.dataset.checkin));
-  if(e.target.matches("[data-mic]")) startDictation(e.target.dataset.mic);
-  if(e.target.matches("[data-action]")) handleAction(e.target.dataset.action);
+  if(quickMeal) addMeal(QUICK_MEALS[num(quickMeal.dataset.quickMeal)]);
+  if(removeMeal) { const log=dayLog(), meal=log.meals.splice(num(removeMeal.dataset.removeMeal),1)[0]; ["calories","protein","fiber","carbs","fat"].forEach((key,index)=>log[key]=Math.max(0,num(log[key])-num(meal[key]))); saveState(); render(); }
+  if(checkin) checkinModal(num(checkin.dataset.checkin));
+  if(microphone) startDictation(microphone.dataset.mic);
+  if(action) handleAction(action.dataset.action);
 });
 document.addEventListener("change", e => {
   if(e.target.matches("[data-field]")) {

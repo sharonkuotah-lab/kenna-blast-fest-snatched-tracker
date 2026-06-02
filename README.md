@@ -2,6 +2,18 @@
 
 A mobile-first, local-first Progressive Web App for a 45-day body recomposition challenge leading to Blast Fest on July 18, 2026. The interface is designed to be simple and repeatable: daily essentials first, deeper tracking only when useful.
 
+## Phase 2 UI Polish
+
+Phase 2 adds a more elevated soft-glam wellness identity while preserving the complete version 1 tracker. The dashboard now behaves like a luxury wellness command center with a focused daily mission, event countdowns, glass panels, premium progress rings, a floating pill navigation, and stronger visual hierarchy. Meals, official check-ins, and the AI Coach journal received dedicated layouts for faster daily use.
+
+### Design System
+
+- Palette: warm cream `#f8f1ec`, soft blush `#e7b7b6`, dusty rose `#bd7180`, mauve `#a98791`, champagne `#bc945e`, and espresso `#241b1c`
+- Headings: [Cormorant Garamond](https://fonts.google.com/specimen/Cormorant+Garamond)
+- Body text: [DM Sans](https://fonts.google.com/specimen/DM+Sans)
+- Decorative brand mark: [Italiana](https://fonts.google.com/specimen/Italiana)
+- UI language: translucent glass cards, editorial spacing, rounded corners, pill buttons, restrained gradients, and large mobile-friendly touch targets
+
 ## Features
 
 - Dashboard with event countdowns, challenge day, streak, next check-in, scores, progress bars, calorie dashboard, and daily coach feedback
@@ -23,6 +35,10 @@ python3 -m http.server 8080
 ```
 
 Then open [http://localhost:8080](http://localhost:8080).
+
+## Install as a PWA
+
+On iPhone, open the deployed site in Safari, tap **Share**, select **Add to Home Screen**, and confirm. On supported desktop browsers, use the install option in the browser address bar or menu. Once installed, the tracker opens like a standalone app and previously cached screens remain available offline.
 
 ## Deploy to GitHub Pages
 
