@@ -47,6 +47,15 @@ const DEFAULT_SETTINGS = {
   activity: "moderate", intensity: "aggressive", waterGoal: 100, proteinGoal: 140,
   fiberGoal: 25, stepGoal: 10000, calorieTarget: 1750, deficitTarget: 650, units: "US"
 };
+const STARTING_BASELINE = {
+  weight: 183.6, bodyFat: 31.7, skeletalMuscle: 39.8, waist: 30.08, abdomen: 37.52,
+  hips: 47.56, bmr: 1598, bodyWater: 46.9, visceralFat: 10
+};
+const WHOLE_FOODS_DEFAULTS = [
+  { name:"Chicken + Rice + Broccoli", calories:540, protein:48, fiber:7, carbs:58, fat:14, sodium:"", price:"", notes:"Easy class-day lunch", rating:5, favorite:true },
+  { name:"Salmon + Potatoes + Green Beans", calories:610, protein:43, fiber:8, carbs:52, fat:25, sodium:"", price:"", notes:"Repeatable dinner", rating:5, favorite:true },
+  { name:"Turkey Bowl + Rice + Vegetables", calories:520, protein:46, fiber:9, carbs:55, fat:13, sodium:"", price:"", notes:"Simple meal-prep bowl", rating:5, favorite:true }
+];
 const GROCERY_DEFAULTS = ["Eggs","Egg whites","Chicken","Salmon","Turkey","Rice","Potatoes","Broccoli","Green beans","Spinach","Kale","Pineapple","Chia seeds","Flax seeds","Kefir","Greek yogurt","Protein powder","Tea","Water / electrolytes"];
 const ROUTINES = {
   0:["Reset Day",["Grocery planning","Meal prep","Long walk or gym","Plan the week"],["Morning water","Plan groceries","Meal prep block","Long walk","Night check-in"]],
@@ -91,11 +100,13 @@ function formatDate(value) { return parseDate(value).toLocaleDateString(undefine
 function saveState() { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
 
 function createDefaultState() {
-  return { settings: { ...DEFAULT_SETTINGS }, daily: {}, checkins: {}, randomWeights: [], favorites: [], groceries: GROCERY_DEFAULTS.map(name=>({name,done:false})), extraEvents: [], coachNotes: [], reminders: true, samplesLoaded: false };
+  return { settings: { ...DEFAULT_SETTINGS }, baseline: { ...STARTING_BASELINE }, daily: {}, checkins: {}, randomWeights: [], favorites: [], wholeFoodsMeals: WHOLE_FOODS_DEFAULTS.map(x=>({...x})), groceries: GROCERY_DEFAULTS.map(name=>({name,done:false})), extraEvents: [], coachNotes: [], reminders: true, samplesLoaded: false };
 }
 function loadState() {
   try {
     const saved=JSON.parse(localStorage.getItem(STORAGE_KEY)), base=createDefaultState(), merged={...base,...saved,settings:{...base.settings,...(saved?.settings||{})}};
+    merged.baseline={...base.baseline,...(saved?.baseline||{})};
+    merged.wholeFoodsMeals=(saved?.wholeFoodsMeals||base.wholeFoodsMeals).map(x=>({...x}));
     merged.settings.heightFeet=num(merged.settings.heightFeet,Math.floor(num(merged.settings.height,68)/12));
     merged.settings.heightInches=num(merged.settings.heightInches,num(merged.settings.height,68)%12);
     merged.settings.height=merged.settings.heightFeet*12+merged.settings.heightInches;
@@ -118,8 +129,9 @@ function burned(log) { return tdee() + num(log.activeCalories); }
 function deficit(log) { return num(log.calories) ? burned(log) - num(log.calories) : 0; }
 function latestOfficialWeight() {
   const logs = CHECKIN_DAYS.map(day => state.checkins[day]).filter(Boolean).filter(x => num(x.weight));
-  return logs.length ? logs.at(-1).weight : state.settings.startWeight;
+  return logs.length ? logs.at(-1).weight : state.baseline.weight || state.settings.startWeight;
 }
+function officialCheckins() { return CHECKIN_DAYS.map(day=>({day,...(state.checkins[day]||{})})).filter(x=>num(x.weight)); }
 function dailyEntries(limit = 45) {
   return Object.entries(state.daily).sort(([a], [b]) => a.localeCompare(b)).slice(-limit).map(([date, log]) => ({ date, ...log }));
 }
@@ -165,6 +177,42 @@ function streak() {
     if (log && (score(log) >= 60 || log.reset)) count++; else if (i > 0 || log) break;
   }
   return count;
+}
+function forecast() {
+  const checkins=officialCheckins(), current=num(latestOfficialWeight()), remaining=Math.max(1,daysRemaining(state.settings.endDate)), goal=num(state.settings.goalWeight);
+  const logs=dailyEntries(9).filter(hasLogData), averageDeficit=avg(logs,deficit);
+  let weeklyRate=averageDeficit ? round((averageDeficit*7)/3500,2) : 0;
+  if(checkins.length>=2) {
+    const first=checkins[0], latest=checkins.at(-1), elapsed=Math.max(1,first.day===latest.day ? latest.day-1 : latest.day-first.day);
+    weeklyRate=round(((num(first.weight)-num(latest.weight))*7)/elapsed,2);
+  }
+  const estimated=round(current-(weeklyRate*remaining/7),1), needed=round(Math.max(0,current-goal)*7/remaining,2);
+  const difference=estimated-goal;
+  const pace=difference<=-1 ? "Ahead of goal" : difference<=1 ? "On track" : difference<=3 ? "Slightly behind" : "Significantly behind";
+  const recommendation=weeklyRate>=needed ? "Keep the routine steady. Consistency is doing the work." : smartPriority(logs).recommendation;
+  return { current, estimated, needed, weeklyRate, pace, recommendation };
+}
+function smartPriority(logs=dailyEntries(7).filter(hasLogData)) {
+  if(!logs.length) return { title:"Start with the basics", body:"Your first few logs will reveal the pattern. Today: water, protein, steps, and one meal you planned.", recommendation:"Log the basics today so your forecast can become personal." };
+  const protein=avg(logs,"protein"), steps=avg(logs,"steps"), calories=avg(logs,"calories"), loggedDays=logs.length, workouts=logs.filter(x=>x.workoutCompleted).length;
+  const weekends=logs.filter(x=>[0,6].includes(parseDate(x.date).getDay())), weekdays=logs.filter(x=>![0,6].includes(parseDate(x.date).getDay()));
+  if(loggedDays<5) return { title:"Consistency is the priority", body:`You logged ${loggedDays}/7 recent days. A quick log still counts.`, recommendation:"Use the 30-second Quick Log daily, even when the day is imperfect." };
+  if(protein<num(state.settings.proteinGoal)*.8) return { title:"Protein is the priority", body:`Your average is ${protein}g. Your goal is ${state.settings.proteinGoal}g.`, recommendation:"Build breakfast and your next meal around protein before snacks." };
+  if(steps<num(state.settings.stepGoal)*.75) return { title:"Steps are the priority", body:`Your average is ${Math.round(steps).toLocaleString()}. Your goal is ${num(state.settings.stepGoal).toLocaleString()}.`, recommendation:"Increase average steps with a 20-minute treadmill walk or evening walk." };
+  if(weekends.length&&weekdays.length&&avg(weekends,"calories")>avg(weekdays,"calories")*1.2) return { title:"Weekend structure is the priority", body:"Your calories rise noticeably on weekends.", recommendation:"Pre-plan one protein meal and one walk before the weekend starts." };
+  if(workouts<3) return { title:"Movement rhythm is the priority", body:`You completed ${workouts} workout${workouts===1?"":"s"} in your recent logs.`, recommendation:"Choose the next realistic workout slot now and keep it simple." };
+  if(calories&&calories>num(state.settings.calorieTarget)+250) return { title:"Meal simplicity is the priority", body:`Your calorie average is ${calories}, above your ${state.settings.calorieTarget} target.`, recommendation:"Repeat your easiest meal-prep day and pre-log the next meal." };
+  return { title:"Protect the rhythm", body:"Your fundamentals are lining up. Keep the next day repeatable.", recommendation:"Keep protein, water, steps, and sleep steady." };
+}
+function weeklyReview() {
+  const logs=dailyEntries(7).filter(hasLogData), priority=smartPriority(logs);
+  if(!logs.length) return { logs, wins:["Your tracker is ready for Day 1."], bottleneck:"No pattern yet.", focus:"Log the basics for a few days. The app will adjust with you.", note:"Start simple. You do not need a perfect first week." };
+  const proteinHits=logs.filter(x=>num(x.protein)>=num(state.settings.proteinGoal)).length, workouts=logs.filter(x=>x.workoutCompleted).length;
+  return { logs, wins:[`Hit protein goal ${proteinHits}/${logs.length} logged days`,`Completed ${workouts} workout${workouts===1?"":"s"}`,`Logged ${logs.length}/7 recent days`], bottleneck:priority.body, focus:priority.recommendation, note:`${priority.title}. ${priority.recommendation}` };
+}
+function previousExerciseDetail(key, date=todayKey()) {
+  const prior=dailyEntries().filter(x=>x.date<date).reverse().find(x=>x.workoutDetails?.[key]?.weight);
+  return prior?.workoutDetails?.[key] || null;
 }
 function todayFocus(log) {
   const routine=routineToday();
@@ -213,29 +261,27 @@ function listCard(title, items) {
 
 function renderDashboard() {
   const log = dayLog(), snatched = score(log), gut = gutScore(log), check = nextCheckin();
-  const workout = WORKOUTS[workoutIndex()][0];
+  const workout = WORKOUTS[workoutIndex()][0], outlook=forecast(), review=weeklyReview(), priority=smartPriority();
   const events=[{name:state.settings.miniEventName,date:state.settings.miniEventDate},{name:state.settings.eventName,date:state.settings.endDate},...(state.extraEvents||[])].filter(x=>x.date>=todayKey()).sort((a,b)=>a.date.localeCompare(b.date));
   const nextEvent=events[0]||{name:state.settings.eventName,date:state.settings.endDate};
+  const missions=[["Protein",pct(log.protein,state.settings.proteinGoal)>=100],["Water",pct(log.water,state.settings.waterGoal)>=100],["Workout",Boolean(log.workoutCompleted||log.activeRecovery)],["Steps",pct(log.steps,state.settings.stepGoal)>=100],["Sleep",num(log.sleep)>=7]];
   document.querySelector("#dashboardContent").innerHTML = `
     ${state.samplesLoaded ? `<div class="card protocol"><div class="row"><div><p class="eyebrow">PREVIEW DATA</p><p class="tiny">Sample logs are loaded so you can explore the app. Clear them in Settings when you are ready to begin.</p></div><button class="secondary-button" data-go="settings">Settings</button></div></div>` : ""}
-    <div class="card hero-card">
-      <div class="row"><div><p class="eyebrow" style="color:#f7d9d7">${phase()} · DAY ${getDayNumber()} OF 45</p><h2 class="hero-title">Blast Fest<br>Snatched</h2><p class="muted hero-subtitle">Your soft-glam accountability era. Basics first, then enjoy your life.</p></div><div><div class="ring" style="--value:${snatched}" data-label="${snatched}"></div><p class="tiny" style="text-align:center;margin-top:7px">SNATCHED SCORE</p></div></div>
+    <div class="card hero-card command-hero">
+      <p class="eyebrow" style="color:#f7d9d7">${phase()} · KENNA'S COMMAND CENTER</p><h2 class="hero-title">Day ${getDayNumber()} <em>of</em> 45</h2>
+      <div class="hero-metrics"><div><strong>${daysRemaining(state.settings.endDate)}</strong><span>days to Blast Fest</span></div><div><strong>${outlook.estimated}</strong><span>forecast lbs</span></div><div><strong>Day ${check}</strong><span>next check-in</span></div></div>
     </div>
-    <div class="card mission-card"><p class="eyebrow">TODAY'S MISSION</p><h3 style="margin-top:5px">${todayFocus(log)}</h3><div class="action-row"><button class="button" data-action="quick-log">Quick log</button><button class="secondary-button" data-action="full-checkin">Full check-in</button></div></div>
+    <div class="card mission-card"><div class="row"><div><p class="eyebrow">TODAY'S MISSION</p><h3 style="margin-top:5px">${todayFocus(log)}</h3></div><div class="mini-score"><strong>${snatched}</strong><span>score</span></div></div><div class="mission-grid">${missions.map(([name,done])=>`<span class="${done?"done":""}">${done?"✓":"○"} ${name}</span>`).join("")}</div></div>
+    <div class="quick-actions"><button data-action="quick-log"><span>🎤</span>Quick log</button><button data-go="nutrition"><span>📸</span>Meal photo</button><button data-go="workouts"><span>🏋</span>Workout</button><button data-go="checkins"><span>⚖</span>Check-in</button><button data-go="coach"><span>✦</span>Ask coach</button></div>
     ${protocolCard()}
     <button class="card movement-card" data-go="workouts"><span><span class="eyebrow">TODAY'S MOVEMENT</span><strong>${workout}</strong><small>${log.workoutCompleted ? "Complete. Nice work." : "Tap to open today's exercises"}</small></span><span class="movement-arrow">→</span></button>
-    <div class="card stack"><div class="row"><div><p class="eyebrow">THE BASICS</p><h3>Keep the main thing simple</h3></div><span class="pill">${streak()} day streak</span></div>
-      ${progressRow("Water", log.water, state.settings.waterGoal, " oz")}
-      ${progressRow("Protein", log.protein, state.settings.proteinGoal, "g")}
-      ${progressRow("Steps", log.steps, state.settings.stepGoal)}
-    </div>
+    <div class="card forecast-card"><div class="row"><div><p class="eyebrow">SNATCHED FORECAST</p><h3>Estimated ${formatDate(state.settings.endDate)} weight</h3></div><span class="pill">${outlook.pace}</span></div><div class="forecast-main"><strong>${outlook.estimated}</strong><span>lbs</span></div><div class="forecast-meta"><span>Need <b>${outlook.needed}</b> lbs/week</span><span>Current <b>${outlook.weeklyRate}</b> lbs/week</span></div><p class="tiny">${outlook.recommendation}</p></div>
+    <div class="card weekly-card"><div class="row"><div><p class="eyebrow">WEEKLY PROGRESS</p><h3>${review.logs.length ? "Protect the rhythm" : "Your transformation starts here"}</h3></div><div class="ring micro-ring" style="--value:${Math.round(avg(review.logs,score))}" data-label="${Math.round(avg(review.logs,score))||0}"></div></div><p class="muted">${priority.body}</p></div>
     <div class="card"><div class="row"><div><p class="eyebrow">NEXT EVENT</p><h3>${nextEvent.name}</h3></div><span class="pill">${daysRemaining(nextEvent.date)} days</span></div><p class="muted">${formatDate(nextEvent.date)}${nextEvent.notes?` · ${nextEvent.notes}`:""}</p></div>
-    ${routineCard()}
-    <div class="coach-note"><p class="eyebrow">COACH NOTE</p><p>${feedback(log)[0]||"Do the basics. A steady day still counts."}</p></div>
     <details class="card"><summary>Calories</summary><div class="detail-body"><div class="metric-grid"><div class="metric"><small>Eaten</small><strong>${num(log.calories)}</strong></div><div class="metric"><small>Est. burn</small><strong>${burned(log)}</strong></div><div class="metric"><small>Deficit</small><strong>${deficit(log)}</strong></div></div>${calorieSummary()}</div></details>
-    <details class="card"><summary>Gut health</summary><div class="detail-body"><p class="muted">Gut score ${gut}/100</p>${progressRow("Fiber", log.fiber, state.settings.fiberGoal, "g")}<div class="spacer"></div><button class="secondary-button" data-go="gut">Open gut log</button></div></details>
+    <details class="card"><summary>Gut health</summary><div class="detail-body"><p class="muted">Gut score ${gut}/100</p>${progressRow("Water",log.water,state.settings.waterGoal," oz")}${progressRow("Protein",log.protein,state.settings.proteinGoal,"g")}${progressRow("Steps",log.steps,state.settings.stepGoal)}${progressRow("Fiber", log.fiber, state.settings.fiberGoal, "g")}<div class="spacer"></div><button class="secondary-button" data-go="gut">Open gut log</button></div></details>
     <details class="card"><summary>Trends + check-ins</summary><div class="detail-body"><p class="muted">Next official check-in: Day ${check} · ${formatDate(challengeDate(check))}</p><div class="action-row"><button class="secondary-button" data-go="progress">Progress</button><button class="secondary-button" data-go="checkins">Check-ins</button></div></div></details>
-    <details class="card"><summary>Events + reminders</summary><div class="detail-body">${events.map(x=>`<p class="tiny">○ ${formatDate(x.date)} · ${x.name}</p>`).join("")}<div class="spacer"></div><button class="secondary-button" data-action="notifications">Browser reminders</button></div></details>
+    <details class="card"><summary>Schedule + reminders</summary><div class="detail-body">${routineCard()}${events.map(x=>`<p class="tiny">○ ${formatDate(x.date)} · ${x.name}</p>`).join("")}<button class="secondary-button" data-action="notifications">Browser reminders</button></div></details>
     <div class="card"><div class="row"><div><p class="eyebrow">ADHD-FRIENDLY RESET</p><h3>Fell off today?</h3></div><button class="danger-button" data-action="reset">Emergency reset</button></div></div>
   `;
 }
@@ -308,7 +354,8 @@ function groceryPanel() {
   return `<div class="card"><p class="eyebrow">GROCERY BUILDER</p><h2>Keep the fridge easy</h2><p class="muted">Tap items as they make it into the cart.</p><div class="spacer"></div>${(state.groceries||[]).map((x,i)=>`<label class="habit"><input type="checkbox" data-grocery="${i}" ${x.done?"checked":""}><span>${x.name}</span></label>`).join("")}<div class="spacer"></div><button class="secondary-button" data-action="add-grocery">+ Add grocery item</button></div>`;
 }
 function wholeFoodsPanel() {
-  return `<div class="card hero-card"><p class="eyebrow" style="color:#f7d9d7">WHOLE FOODS LOG</p><h2>Meal prep library</h2><p class="muted">Save repeatable meals so busy days need less thought.</p></div><div class="card"><p class="muted">Log calories, protein, fiber, carbs, fat, optional sodium, a rating, and notes.</p><div class="spacer"></div><button class="button" data-action="wholefoods-meal">Log Whole Foods meal prep</button></div>`;
+  const meals=state.wholeFoodsMeals||[];
+  return `<div class="card hero-card"><p class="eyebrow" style="color:#f7d9d7">WHOLE FOODS LIBRARY</p><h2>Busy-day favorites</h2><p class="muted">Save repeatable meals so busy days need less thought.</p></div><div class="card"><div class="row"><div><p class="eyebrow">SAVED MEALS</p><h3>Tap once to log</h3></div><button class="secondary-button" data-action="wholefoods-meal">+ Save meal</button></div><div class="library-grid">${meals.length?meals.map((m,i)=>`<button class="library-card" data-wholefood-meal="${i}"><span class="library-star">${m.favorite?"★":"☆"}</span><strong>${m.name}</strong><small>${m.calories} cal · ${m.protein}g protein · ${m.fiber}g fiber</small><span>${m.price?`$${m.price} · `:""}${m.rating||"—"}/5</span></button>`).join(""):`<div class="empty">No Whole Foods meals saved yet. Add your first reliable meal prep.</div>`}</div></div>`;
 }
 function addMeal(meal) {
   const log = dayLog(); log.meals ||= [];
@@ -329,8 +376,8 @@ function renderWorkouts() {
     <div class="card hero-card"><p class="eyebrow" style="color:#ffe7e7">TODAY · DAY ${currentIndex + 1} OF 7</p><h2>${WORKOUTS[currentIndex][0]}</h2><p class="muted">Open the plan, track the work, then recover.</p></div>
     <div class="split-scroll">${WORKOUTS.map((x,i)=>`<button class="${i===selected?"active":""}" data-workout-day="${i}"><span>Day ${i+1}</span><strong>${x[0]}</strong></button>`).join("")}</div>
     <div class="card"><div class="row"><div><p class="eyebrow">${selected===currentIndex?"TODAY'S WORKOUT":"WORKOUT TEMPLATE"}</p><h3>${WORKOUTS[selected][0]}</h3></div><button class="secondary-button" data-action="add-exercise">+ Exercise</button></div>${exercises.map((x,i)=>{
-        const detail=log.workoutDetails[`${selected}-${i}`]||{}, name=x.split(" · ")[0], prescription=x.split(" · ")[1]||"";
-        return `<div class="exercise-card"><label class="habit"><input type="checkbox" data-exercise="${selected}-${i}" ${log.exercises?.[`${selected}-${i}`] ? "checked" : ""}><span><strong>${name}</strong><small>${prescription}</small></span></label><div class="exercise-grid">${field("Sets",`workoutDetails.${selected}-${i}.sets`,detail.sets)}${field("Reps",`workoutDetails.${selected}-${i}.reps`,detail.reps)}${field("Weight",`workoutDetails.${selected}-${i}.weight`,detail.weight)}${field("Notes",`workoutDetails.${selected}-${i}.notes`,detail.notes,"text")}</div></div>`;
+        const key=`${selected}-${i}`, detail=log.workoutDetails[key]||{}, previous=previousExerciseDetail(key), name=x.split(" · ")[0], prescription=x.split(" · ")[1]||"", change=previous?.weight&&detail.weight?num(detail.weight)-num(previous.weight):0;
+        return `<div class="exercise-card"><label class="habit"><input type="checkbox" data-exercise="${key}" ${log.exercises?.[key] ? "checked" : ""}><span><strong>${name}</strong><small>${prescription}</small></span></label>${previous?.weight?`<div class="overload-note"><span>Last: ${previous.weight} lbs</span><b>${detail.weight?`${change>=0?"↑":"↓"} ${Math.abs(change)} lbs`:"Add today's weight"}</b></div>`:""}<div class="exercise-grid">${field("Sets",`workoutDetails.${key}.sets`,detail.sets)}${field("Reps",`workoutDetails.${key}.reps`,detail.reps)}${field("Weight lbs",`workoutDetails.${key}.weight`,detail.weight)}${field("Notes",`workoutDetails.${key}.notes`,detail.notes,"text")}</div></div>`;
       }).join("")}
       <div class="spacer"></div><div class="form-grid">${completeField("Workout","workoutCompleted",log.workoutCompleted)}${completeField("Cardio","cardio",log.cardio)}</div>
       <div class="spacer"></div>${noteField("Workout notes","workoutNotes",log.workoutNotes)}
@@ -361,7 +408,7 @@ function renderProgress() {
     ${chartCard("Bloating", logs.map(x=>({label:formatDate(x.date),value:num(x.bloating)})).filter(x=>x.value))}
     ${chartCard("Constipation", logs.map(x=>({label:formatDate(x.date),value:num(x.constipation)})).filter(x=>x.value))}
     ${chartCard("Gut Health Score", logs.map(x=>({label:formatDate(x.date),value:gutScore(x)})))}
-    <div class="card"><h3>45-day calendar</h3><p class="tiny">Tap any day to view its log. Gold dots mark official check-ins.</p><div class="spacer"></div>${calendarHTML()}</div>
+    <div class="card"><h3>Challenge calendar</h3><p class="tiny">Tap any day to view its log. Gold dots mark official check-ins. Day 45 is your final measurement; the last two days are your Blast Fest buffer.</p><div class="spacer"></div>${calendarHTML()}</div>
     <div class="card"><h3>Progress badges</h3><div class="row wrap">${badgesHTML()}</div></div>
   `;
 }
@@ -374,7 +421,8 @@ function lineChart(data) {
   return `<svg class="chart" viewBox="0 0 ${width} ${height}" role="img"><line class="grid" x1="0" y1="${height-pad}" x2="${width}" y2="${height-pad}"/><polyline class="line" points="${points.map(p=>`${p.x},${p.y}`).join(" ")}"/>${points.map(p=>`<circle class="dot" cx="${p.x}" cy="${p.y}" r="4"><title>${p.label}: ${p.value}</title></circle>`).join("")}</svg><div class="row tiny"><span>${data[0].label}: ${data[0].value}</span><span>${data.at(-1).label}: ${data.at(-1).value}</span></div>`;
 }
 function calendarHTML() {
-  return `<div class="calendar">${Array.from({length:45},(_,i)=>i+1).map(day => {
+  const runway=Math.max(45,daysBetween(state.settings.startDate,state.settings.endDate)+1);
+  return `<div class="calendar">${Array.from({length:runway},(_,i)=>i+1).map(day => {
     const date=challengeDate(day), log=state.daily[date], complete=log&&(score(log)>=60||log.reset), extra=(state.extraEvents||[]).find(x=>x.date===date), eventName=date===state.settings.miniEventDate?state.settings.miniEventName:date===state.settings.endDate?state.settings.eventName:extra?.name, classes=["day",complete?"complete":"",day===getDayNumber()?"current":"",CHECKIN_DAYS.includes(day)?"checkin":"",eventName?"event":""].join(" ");
     return `<button class="${classes}" data-calendar-day="${date}" title="${date}${eventName?` · ${eventName}`:""}"><span>${day}</span><small>${parseDate(date).getDate()}</small></button>`;
   }).join("")}</div>`;
@@ -383,15 +431,18 @@ function badgesHTML() {
   const logs=dailyEntries(), earned=[["First log",logs.length>=1],["3-day rhythm",streak()>=3],["Locked in",logs.some(x=>score(x)>=90)],["Gut win",logs.some(x=>gutScore(x)>=80)],["Check-in complete",Object.keys(state.checkins).length>=1],["Reset queen",logs.some(x=>x.reset)]];
   return earned.map(([name,yes])=>`<span class="badge ${yes?"earned":"locked"}">${yes?"✓":"○"} ${name}</span>`).join("");
 }
+function comparisonRow(label,start,previous,current,unit) {
+  const change=current!==undefined&&current!==""?round(num(current)-num(start),2):"—";
+  return `<div class="comparison-row"><strong>${label}</strong><span><small>Start</small>${start}${unit}</span><span><small>Previous</small>${previous??"—"}${previous!==undefined?unit:""}</span><span><small>Current</small>${current??"—"}${current!==undefined?unit:""}</span><span class="${num(change)<0?"positive":""}"><small>Total</small>${change==="—"?"—":`${change>0?"+":""}${change}${unit}`}</span></div>`;
+}
 
 function renderCheckins() {
-  const current=getDayNumber(), completed=CHECKIN_DAYS.map(day=>({day,...(state.checkins[day]||{})})).filter(x=>num(x.weight)), first=completed[0], latest=completed.at(-1);
+  const current=getDayNumber(), completed=officialCheckins(), latest=completed.at(-1), previous=completed.at(-2), baseline=state.baseline;
   document.querySelector("#checkinContent").innerHTML = `
     <div class="card hero-card"><p class="eyebrow" style="color:#f7d9d7">EDITORIAL WELLNESS REPORT</p><h2>Your official glow-up log</h2><p class="muted">Check in every nine days. Observe the pattern without letting scale noise run the day.</p></div>
-    <div class="card"><div class="row"><div><p class="eyebrow">WHAT CHANGED?</p><h3>Official transformation snapshot</h3></div><span class="pill">RENPHO + TAPE</span></div><div class="compare-grid">
-      <div class="compare-card"><span class="tiny">Official weight</span><strong>${latest?.weight || "—"} lbs</strong><span class="tiny">${first&&latest ? `${round(latest.weight-first.weight,1)} lbs since Day ${first.day}` : "Log Day 1 to begin"}</span></div>
-      <div class="compare-card"><span class="tiny">Waist</span><strong>${latest?.waist || "—"} in</strong><span class="tiny">${first?.waist&&latest?.waist ? `${round(latest.waist-first.waist,1)} in since Day ${first.day}` : "Measurements tell the story"}</span></div>
-    </div></div>
+    <div class="card"><div class="row"><div><p class="eyebrow">STARTING BASELINE</p><h3>Your permanent reference point</h3></div><span class="pill">RENPHO + TAPE</span></div><div class="baseline-grid">${[["Weight",baseline.weight,"lbs"],["Body fat",baseline.bodyFat,"%"],["Skeletal muscle",baseline.skeletalMuscle,"%"],["Waist",baseline.waist,"in"],["Abdomen",baseline.abdomen,"in"],["Hip",baseline.hips,"in"],["BMR",baseline.bmr,""],["Body water",baseline.bodyWater,"%"],["Visceral fat",baseline.visceralFat,""]].map(([label,value,unit])=>`<div><small>${label}</small><strong>${value}${unit}</strong></div>`).join("")}</div></div>
+    <div class="card"><div class="row"><div><p class="eyebrow">WHAT CHANGED?</p><h3>Starting · previous · current</h3></div><span class="pill">OFFICIAL ONLY</span></div>${comparisonRow("Weight",baseline.weight,previous?.weight,latest?.weight,"lbs")}${comparisonRow("Waist",baseline.waist,previous?.waist,latest?.waist,"in")}${comparisonRow("Hip",baseline.hips,previous?.hips,latest?.hips,"in")}</div>
+    <div class="card"><div class="row"><div><p class="eyebrow">PHOTO PROGRESS</p><h3>Compare your official photos</h3></div><span class="pill">STAYS LOCAL</span></div><p class="muted">See Day 1 beside a later official check-in. Photos never leave this browser.</p><div class="action-row">${CHECKIN_DAYS.slice(1).map(day=>`<button class="secondary-button" data-photo-compare="${day}">Day 1 vs ${day}</button>`).join("")}</div></div>
     <div class="card"><p>Official check-ins are the only weights used for trends. Daily scale noise is not the assignment.</p><div class="spacer"></div><button class="secondary-button" data-action="random-weight">Log a private random weigh-in</button></div>
     <div class="card"><h3>Official schedule</h3>${CHECKIN_DAYS.map(day=>`<div class="checkin-item row"><div><strong>Day ${day} · ${formatDate(challengeDate(day))}</strong><div class="tiny">${state.checkins[day]?.weight ? `${state.checkins[day].weight} lbs · waist ${state.checkins[day].waist || "—"}` : day===current ? "Your official check-in is ready." : "Not logged yet"}</div></div><button class="secondary-button" data-checkin="${day}">${state.checkins[day]?"Edit":"Open"}</button></div>`).join("")}</div>
     <div class="card"><h3>Private random weigh-ins</h3>${state.randomWeights.length ? state.randomWeights.map(x=>`<div class="checkin-item row"><span>${formatDate(x.date)}</span><strong>${x.weight} lbs</strong></div>`).join("") : `<div class="empty">None logged. This is intentionally not the main focus.</div>`}</div>
@@ -401,7 +452,7 @@ function checkinModal(day) {
   const x=state.checkins[day]||{};
   modal(`<div class="modal-body"><p class="eyebrow">OFFICIAL CHECK-IN</p><h2>Day ${day}</h2><p class="muted">${formatDate(challengeDate(day))} · honest data, zero judgment.</p><div class="spacer"></div><form id="checkinForm" data-day="${day}"><div class="form-grid">
     ${field("Official weight","weight",x.weight,"number",'step="0.1"')}${field("Body fat %","bodyFat",x.bodyFat,"number",'step="0.1"')}${field("Muscle %","muscle",x.muscle,"number",'step="0.1"')}${field("Water %","waterPercent",x.waterPercent,"number",'step="0.1"')}
-    ${field("Visceral fat","visceralFat",x.visceralFat)}${field("Metabolic age","metabolicAge",x.metabolicAge)}${field("Waist","waist",x.waist,"number",'step="0.1"')}${field("Hips","hips",x.hips,"number",'step="0.1"')}
+    ${field("Visceral fat","visceralFat",x.visceralFat)}${field("Metabolic age","metabolicAge",x.metabolicAge)}${field("Waist","waist",x.waist,"number",'step="0.01"')}${field("Abdomen","abdomen",x.abdomen,"number",'step="0.01"')}${field("Hips","hips",x.hips,"number",'step="0.01"')}
     ${field("Chest","chest",x.chest,"number",'step="0.1"')}${field("Arm","arm",x.arm,"number",'step="0.1"')}${field("Thigh","thigh",x.thigh,"number",'step="0.1"')}
     <label>Front photo<input type="file" accept="image/*" data-photo="checkin-${day}-front"></label><label>Side photo<input type="file" accept="image/*" data-photo="checkin-${day}-side"></label><label>Back photo<input type="file" accept="image/*" data-photo="checkin-${day}-back"></label>
     ${noteField("Outfit fit notes","outfit",x.outfit)}${noteField("Bloating notes","bloatingNotes",x.bloatingNotes)}${noteField("Gut health notes","gutNotes",x.gutNotes)}${noteField("What went well?","wins",x.wins)}${noteField("What needs fixing?","challenges",x.challenges)}${noteField("Next 9-day focus","nextFocus",x.nextFocus)}
@@ -435,14 +486,41 @@ Notes: ${logs.map(x=>x.notes).filter(Boolean).join(" | ") || "—"}
 Please analyze my progress and tell me what to adjust.`;
 }
 function renderCoach() {
+  const review=weeklyReview(), priority=smartPriority(), outlook=forecast();
   document.querySelector("#coachContent").innerHTML = `
     <div class="card hero-card"><p class="eyebrow" style="color:#ffe7e7">AI COACH</p><h2>Get clear feedback.</h2><p class="muted">Paste a clean summary into ChatGPT when you want help adjusting the plan.</p></div>
-    <div class="card"><p class="eyebrow">COPY FOR CHATGPT</p><div class="stack"><button class="quick-add" data-action="copy-daily-summary"><strong>Copy Daily Summary</strong><br><span class="tiny">Use for a quick same-day adjustment.</span></button><button class="quick-add" data-action="copy-summary"><strong>Copy 9-Day Summary</strong><br><span class="tiny">Use for a deeper progress review.</span></button><button class="quick-add" data-action="copy-photo-prompt"><strong>Copy Meal Photo Prompt</strong><br><span class="tiny">Attach a meal photo in ChatGPT and estimate the macros.</span></button></div></div>
+    <div class="card priority-card"><p class="eyebrow">ONE PRIORITY</p><h3>${priority.title}</h3><p class="muted">${priority.body}</p><p class="tiny">${priority.recommendation}</p></div>
+    <div class="card"><p class="eyebrow">SUNDAY REVIEW</p><h3>Weekly coach notes</h3><div class="review-list">${review.wins.map(x=>`<p>✓ ${x}</p>`).join("")}</div><div class="feedback"><strong>Biggest bottleneck</strong><br>${review.bottleneck}</div><div class="spacer"></div><p class="tiny"><strong>Focus this week:</strong> ${review.focus}</p></div>
+    <div class="card"><p class="eyebrow">EXPORT FOR CHATGPT</p><div class="stack"><button class="button" data-action="copy-export">Export For ChatGPT</button><button class="quick-add" data-action="copy-daily-summary"><strong>Copy Daily Summary</strong><br><span class="tiny">Use for a quick same-day adjustment.</span></button><button class="quick-add" data-action="copy-summary"><strong>Copy 9-Day Summary</strong><br><span class="tiny">Use for a deeper progress review.</span></button><button class="quick-add" data-action="copy-photo-prompt"><strong>Copy Meal Photo Prompt</strong><br><span class="tiny">Attach a meal photo in ChatGPT and estimate the macros.</span></button></div></div>
     <div class="coach-note"><p class="eyebrow">COACHING PROMPT</p><p style="margin-top:5px">Paste this into ChatGPT when you want feedback. Ask for your top three priorities and one thing to simplify.</p></div>
     <div class="card"><p class="eyebrow">SAVE COACH FEEDBACK</p><h3>Keep advice you want to revisit</h3><textarea id="coachFeedback" placeholder="Paste useful coach feedback here..."></textarea><div class="spacer"></div><button class="button" data-action="save-coach-note">Save coach note</button></div>
     <div class="card"><p class="eyebrow">SAVED COACH NOTES</p>${(state.coachNotes||[]).length?state.coachNotes.map(x=>`<div class="coach-note"><span class="tiny">${formatDate(x.date)}</span><p>${x.text}</p></div>`).join(""):`<div class="empty">No saved coach notes yet.</div>`}</div>
-    <div class="card"><p class="eyebrow">A NOTE FOR THE JOURNEY</p><p>Weight, measurements, habits, and context belong together. Photos stay local to your device and are not pasted into the text report.</p></div>
+    <div class="card"><p class="eyebrow">FORECAST SNAPSHOT</p><p><strong>${outlook.estimated} lbs</strong> estimated for Blast Fest · ${outlook.pace.toLowerCase()}.</p><p class="tiny">Forecasts are estimates, not promises. Official check-ins and consistent logs make them more useful.</p></div>
   `;
+}
+function chatGPTExport() {
+  const logs=dailyEntries(9).filter(hasLogData), outlook=forecast(), priority=smartPriority(logs), official=officialCheckins();
+  return `Kenna's Blast Fest Coach Export
+Date: ${formatDate(todayKey())}
+Challenge day: ${getDayNumber()} of 45
+Current official weight: ${latestOfficialWeight()} lbs
+Goal weight: ${state.settings.goalWeight} lbs
+Forecast Blast Fest weight: ${outlook.estimated} lbs
+Forecast pace: ${outlook.pace}
+Needed rate: ${outlook.needed} lbs/week
+Current estimated rate: ${outlook.weeklyRate} lbs/week
+9-day calories average: ${avg(logs,"calories")||"—"}
+9-day protein average: ${avg(logs,"protein")||"—"}g
+9-day fiber average: ${avg(logs,"fiber")||"—"}g
+9-day water average: ${avg(logs,"water")||"—"} oz
+9-day steps average: ${avg(logs,"steps")||"—"}
+9-day sleep average: ${avg(logs,"sleep")||"—"} hours
+Workouts: ${logs.filter(x=>x.workoutCompleted).length}/${logs.length||0}
+Gut health score average: ${avg(logs,gutScore)||"—"}/100
+Official check-ins: ${official.length?official.map(x=>`Day ${x.day}: ${x.weight} lbs, waist ${x.waist||"—"} in`).join(" | "):"None logged yet"}
+Coach priority: ${priority.title}. ${priority.recommendation}
+Saved coach notes: ${(state.coachNotes||[]).map(x=>x.text).join(" | ")||"—"}
+Please analyze this progress and give me one main priority, two practical adjustments, and one thing to keep doing.`;
 }
 function dailySummary() { const log=dayLog(); return `Blast Fest Daily Check-In:
 Date: ${formatDate(todayKey())}
@@ -470,6 +548,7 @@ function renderSettings() {
       ${field("Goal weight","settings.goalWeight",s.goalWeight,"number",'step="0.1"')}${selectField("Activity level","settings.activity",s.activity,["sedentary","light","moderate","active"])}${selectField("Goal intensity","settings.intensity",s.intensity,["moderate","aggressive"])}
       ${field("Water goal oz","settings.waterGoal",s.waterGoal)}${field("Protein goal g","settings.proteinGoal",s.proteinGoal)}${field("Fiber goal g","settings.fiberGoal",s.fiberGoal)}${field("Step goal","settings.stepGoal",s.stepGoal)}${field("Calorie target","settings.calorieTarget",s.calorieTarget)}${field("Deficit target","settings.deficitTarget",s.deficitTarget)}
     </div><p class="tiny">Height display: ${s.heightFeet}′${s.heightInches}″</p></div>
+    <div class="card"><p class="eyebrow">PERMANENT BASELINE</p><h3>Your starting RENPHO + tape snapshot</h3><p class="muted">These values anchor every official comparison.</p><div class="spacer"></div><div class="form-grid">${field("Weight","baseline.weight",state.baseline.weight,"number",'step="0.1"')}${field("Body fat %","baseline.bodyFat",state.baseline.bodyFat,"number",'step="0.1"')}${field("Skeletal muscle %","baseline.skeletalMuscle",state.baseline.skeletalMuscle,"number",'step="0.1"')}${field("Waist","baseline.waist",state.baseline.waist,"number",'step="0.01"')}${field("Abdomen","baseline.abdomen",state.baseline.abdomen,"number",'step="0.01"')}${field("Hip","baseline.hips",state.baseline.hips,"number",'step="0.01"')}${field("BMR","baseline.bmr",state.baseline.bmr)}${field("Body water %","baseline.bodyWater",state.baseline.bodyWater,"number",'step="0.1"')}${field("Visceral fat","baseline.visceralFat",state.baseline.visceralFat)}</div></div>
     <div class="card"><h3>TDEE calculator</h3><div class="spacer"></div><div class="grid-2"><div><span class="tiny">BMR</span><strong>${bmr()} cal</strong></div><div><span class="tiny">Maintenance</span><strong>${tdee()} cal</strong></div><div><span class="tiny">Moderate target</span><strong>${tdee()-500} cal</strong></div><div><span class="tiny">Aggressive target</span><strong>${Math.max(1200,tdee()-750)} cal</strong></div></div><div class="spacer"></div>${s.calorieTarget<1200?'<div class="feedback">Your target is too low for this tracker. Choose a more sustainable calorie target and seek professional guidance for personalized needs.</div>':'<p class="tiny">Recommended targets avoid extreme starvation calories. Individual needs vary.</p>'}</div>
     <div class="card"><h3>Routine-based reminders</h3><p class="muted">${routineToday()[2].join(" · ")}</p><div class="spacer"></div><button class="secondary-button" data-action="notifications">Enable optional browser reminders</button></div>
     <div class="card"><h3>Starter data</h3><p class="muted">Load sample days to preview charts, or clear all tracker data when you are ready for a fresh start.</p><div class="spacer"></div><div class="row wrap"><button class="secondary-button" data-action="samples">Load sample data</button><button class="danger-button" data-action="clear-data">Clear all data</button></div></div>
@@ -502,14 +581,16 @@ function coerce(input) {
 }
 
 document.addEventListener("click", e => {
-  const nav=e.target.closest("[data-nav]"), goButton=e.target.closest("[data-go]"), quickMeal=e.target.closest("[data-quick-meal]"), removeMeal=e.target.closest("[data-remove-meal]"), checkin=e.target.closest("[data-checkin]"), microphone=e.target.closest("[data-mic]"), action=e.target.closest("[data-action]"), tab=e.target.closest("[data-nutrition-tab]"), grocery=e.target.closest("[data-grocery]"), workout=e.target.closest("[data-workout-day]"), calendar=e.target.closest("[data-calendar-day]"), removeEvent=e.target.closest("[data-remove-event]");
+  const nav=e.target.closest("[data-nav]"), goButton=e.target.closest("[data-go]"), quickMeal=e.target.closest("[data-quick-meal]"), libraryMeal=e.target.closest("[data-wholefood-meal]"), removeMeal=e.target.closest("[data-remove-meal]"), checkin=e.target.closest("[data-checkin]"), photoCompare=e.target.closest("[data-photo-compare]"), microphone=e.target.closest("[data-mic]"), action=e.target.closest("[data-action]"), tab=e.target.closest("[data-nutrition-tab]"), grocery=e.target.closest("[data-grocery]"), workout=e.target.closest("[data-workout-day]"), calendar=e.target.closest("[data-calendar-day]"), removeEvent=e.target.closest("[data-remove-event]");
   if(nav) go(nav.dataset.nav); if(goButton) go(goButton.dataset.go);
   if(e.target.matches("[data-close]")) document.querySelector("#modal").close();
   if(e.target.matches("[data-habit]")) { dayLog().habits[e.target.dataset.habit]=e.target.checked; saveState(); render(); }
   if(e.target.matches("[data-exercise]")) { dayLog().exercises[e.target.dataset.exercise]=e.target.checked; saveState(); render(); }
   if(quickMeal) addMeal(QUICK_MEALS[num(quickMeal.dataset.quickMeal)]);
+  if(libraryMeal) { const m=state.wholeFoodsMeals[num(libraryMeal.dataset.wholefoodMeal)]; addMeal([m.name,"Meal prep",m.calories,m.protein,m.fiber,m.carbs,m.fat]); }
   if(removeMeal) { const log=dayLog(), meal=log.meals.splice(num(removeMeal.dataset.removeMeal),1)[0]; ["calories","protein","fiber","carbs","fat"].forEach((key,index)=>log[key]=Math.max(0,num(log[key])-num(meal[key]))); saveState(); render(); }
   if(checkin) checkinModal(num(checkin.dataset.checkin));
+  if(photoCompare) showPhotoComparison(num(photoCompare.dataset.photoCompare));
   if(microphone) startDictation(microphone.dataset.mic);
   if(action) handleAction(action.dataset.action);
   if(tab) { nutritionTab=tab.dataset.nutritionTab; renderNutrition(); }
@@ -522,6 +603,7 @@ document.addEventListener("change", e => {
   if(e.target.matches("[data-field]")) {
     const key=e.target.dataset.field, value=coerce(e.target);
     if(key.startsWith("settings.")) { setDeep(state,key,value); state.settings.height=num(state.settings.heightFeet)*12+num(state.settings.heightInches); }
+    else if(key.startsWith("baseline.")) setDeep(state,key,value);
     else if(key.includes(".")) setDeep(dayLog(),key,value); else dayLog()[key]=value;
     saveState(); render();
   }
@@ -547,6 +629,7 @@ function handleAction(action) {
   if(action==="random-weight") modal(`<div class="modal-body"><p class="eyebrow">PRIVATE RANDOM WEIGH-IN</p><h2>This is not an official check-in day.</h2><p>Daily scale changes can be water, sodium, constipation, sleep, or hormones. Do you still want to log this as a private random weigh-in?</p><form id="randomWeightForm"><div class="spacer"></div>${field("Private weight","privateWeight","","number",'step="0.1"')}<div class="modal-actions"><button type="button" class="secondary-button" data-close>Cancel</button><button class="button">Log privately</button></div></form></div>`);
   if(action==="copy-summary") navigator.clipboard.writeText(summary()).then(()=>toast("Summary copied for ChatGPT"));
   if(action==="copy-daily-summary") navigator.clipboard.writeText(dailySummary()).then(()=>toast("Daily summary copied"));
+  if(action==="copy-export") navigator.clipboard.writeText(chatGPTExport()).then(()=>toast("Coach export copied for ChatGPT"));
   if(action==="copy-photo-prompt") navigator.clipboard.writeText("I am attaching a meal photo. Please estimate calories, protein, fiber, carbs, fat, and sodium range. Tell me how to make this meal more supportive of my protein and gut-health goals without being extreme.").then(()=>toast("Meal photo prompt copied"));
   if(action==="save-coach-note") { const text=document.querySelector("#coachFeedback")?.value.trim(); if(text){ state.coachNotes.push({date:todayKey(),text}); saveState(); toast("Coach note saved"); renderCoach(); } }
   if(action==="notifications") requestNotifications();
@@ -555,7 +638,7 @@ function handleAction(action) {
   if(action==="confirm-fresh-start") { state=createDefaultState(); saveState(); document.querySelector("#modal").close(); toast("Clean slate ready. Day 1 starts June 2."); render(); }
   if(action==="add-event") modal(`<div class="modal-body"><p class="eyebrow">EXTRA EVENT</p><h2>Add a milestone</h2><form id="eventForm"><div class="form-grid">${field("Event name","eventName","","text")}${field("Event date","eventDate","","date")}${noteField("Goal or notes","eventNotes","")}</div><div class="modal-actions"><button type="button" class="secondary-button" data-close>Cancel</button><button class="button">Save event</button></div></form></div>`);
   if(action==="add-grocery") modal(`<div class="modal-body"><h2>Add grocery item</h2><form id="groceryForm">${field("Item name","groceryName","","text")}<div class="modal-actions"><button type="button" class="secondary-button" data-close>Cancel</button><button class="button">Add item</button></div></form></div>`);
-  if(action==="wholefoods-meal") modal(`<div class="modal-body"><p class="eyebrow">WHOLE FOODS LOG</p><h2>Log meal prep</h2><form id="wholeFoodsForm"><div class="form-grid">${field("Meal name","name","","text")}${field("Calories","calories","")}${field("Protein g","protein","")}${field("Fiber g","fiber","")}${field("Carbs g","carbs","")}${field("Fat g","fat","")}${field("Sodium optional","sodium","")}${field("Rating 1-5","rating","5")}${noteField("Meal notes","mealNotes","")}<label>Meal photo<input type="file" accept="image/*" capture="environment" data-photo="wholefoods-${todayKey()}"></label></div><div class="modal-actions"><button type="button" class="secondary-button" data-close>Cancel</button><button class="button">Log meal</button></div></form></div>`);
+  if(action==="wholefoods-meal") modal(`<div class="modal-body"><p class="eyebrow">WHOLE FOODS LIBRARY</p><h2>Save meal prep</h2><form id="wholeFoodsForm"><div class="form-grid">${field("Meal name","name","","text")}${field("Calories","calories","")}${field("Protein g","protein","")}${field("Fiber g","fiber","")}${field("Carbs g","carbs","")}${field("Fat g","fat","")}${field("Sodium optional","sodium","")}${field("Price optional","price","","number",'step="0.01"')}${field("Rating 1-5","rating","5")}${yesNoField("Favorite","favorite",true)}${noteField("Meal notes","mealNotes","")}<label>Meal photo<input type="file" accept="image/*" capture="environment" data-photo="wholefoods-${todayKey()}"></label></div><div class="modal-actions"><button type="button" class="secondary-button" data-close>Cancel</button><button class="button">Save and log meal</button></div></form></div>`);
   if(action==="add-exercise") modal(`<div class="modal-body"><h2>Add exercise</h2><form id="exerciseForm">${field("Exercise name","exerciseName","","text")}<div class="modal-actions"><button type="button" class="secondary-button" data-close>Cancel</button><button class="button">Add exercise</button></div></form></div>`);
   if(action==="clear-data") modal(`<div class="modal-body"><h2>Clear all local data?</h2><p>This removes daily logs, meals, check-ins, private weigh-ins, and settings from this browser.</p><div class="modal-actions"><button class="secondary-button" data-close>Cancel</button><button class="danger-button" data-action="confirm-clear">Clear everything</button></div></div>`);
   if(action==="confirm-clear") { localStorage.removeItem(STORAGE_KEY); state=createDefaultState(); saveState(); document.querySelector("#modal").close(); toast("Tracker cleared"); render(); }
@@ -565,10 +648,10 @@ document.addEventListener("submit",e=>{
   if(e.target.id==="randomWeightForm"){e.preventDefault();state.randomWeights.push({date:todayKey(),weight:num(e.target.querySelector("[data-field=privateWeight]").value)});saveState();document.querySelector("#modal").close();toast("Stored privately");render();}
   if(e.target.id==="eventForm"){e.preventDefault();const inputs=e.target.querySelectorAll("[data-field]");const data={};inputs.forEach(x=>data[x.dataset.field]=coerce(x));if(!data.eventDate)return toast("Add a date for this milestone.");state.extraEvents.push({name:data.eventName||"Extra event",date:data.eventDate,notes:data.eventNotes});saveState();document.querySelector("#modal").close();toast("Event added");renderSettings();}
   if(e.target.id==="groceryForm"){e.preventDefault();const name=e.target.querySelector("[data-field=groceryName]").value.trim();if(name)state.groceries.push({name,done:false});saveState();document.querySelector("#modal").close();renderNutrition();}
-  if(e.target.id==="wholeFoodsForm"){e.preventDefault();const d={};e.target.querySelectorAll("[data-field]").forEach(x=>d[x.dataset.field]=coerce(x));addMeal([d.name||"Whole Foods meal prep","Meal prep",num(d.calories),num(d.protein),num(d.fiber),num(d.carbs),num(d.fat)]);document.querySelector("#modal").close();}
+  if(e.target.id==="wholeFoodsForm"){e.preventDefault();const d={};e.target.querySelectorAll("[data-field]").forEach(x=>d[x.dataset.field]=coerce(x));const meal={name:d.name||"Whole Foods meal prep",calories:num(d.calories),protein:num(d.protein),fiber:num(d.fiber),carbs:num(d.carbs),fat:num(d.fat),sodium:d.sodium,price:d.price,notes:d.mealNotes,rating:num(d.rating,5),favorite:Boolean(d.favorite)};state.wholeFoodsMeals.push(meal);saveState();addMeal([meal.name,"Meal prep",meal.calories,meal.protein,meal.fiber,meal.carbs,meal.fat]);document.querySelector("#modal").close();}
   if(e.target.id==="exerciseForm"){e.preventDefault();const name=e.target.querySelector("[data-field=exerciseName]").value.trim();const selected=workoutDay===null?workoutIndex():workoutDay;if(name)(state.customExercises[selected]||=[]).push(name);saveState();document.querySelector("#modal").close();renderWorkouts();}
 });
-function openDayModal(date) { const log=state.daily[date], day=getDayNumber(date); modal(`<div class="modal-body"><p class="eyebrow">DAY ${day} · ${formatDate(date)}</p><h2>${log&&hasLogData(log)?"Logged day":"No log yet"}</h2>${log&&hasLogData(log)?`<div class="compare-grid"><div class="compare-card"><span class="tiny">Water</span><strong>${num(log.water)} oz</strong></div><div class="compare-card"><span class="tiny">Protein</span><strong>${num(log.protein)}g</strong></div><div class="compare-card"><span class="tiny">Steps</span><strong>${num(log.steps)}</strong></div><div class="compare-card"><span class="tiny">Score</span><strong>${score(log)}</strong></div></div><p class="muted">${log.notes||"No notes added."}</p>`:`<p class="muted">Nothing logged for this date yet.</p>`}<div class="modal-actions"><button class="secondary-button" data-close>Close</button></div></div>`); }
+function openDayModal(date) { const log=state.daily[date], day=daysBetween(state.settings.startDate,date)+1; modal(`<div class="modal-body"><p class="eyebrow">${day<=45?`DAY ${day}`:"BLAST FEST BUFFER"} · ${formatDate(date)}</p><h2>${log&&hasLogData(log)?"Logged day":"No log yet"}</h2>${log&&hasLogData(log)?`<div class="compare-grid"><div class="compare-card"><span class="tiny">Water</span><strong>${num(log.water)} oz</strong></div><div class="compare-card"><span class="tiny">Protein</span><strong>${num(log.protein)}g</strong></div><div class="compare-card"><span class="tiny">Steps</span><strong>${num(log.steps)}</strong></div><div class="compare-card"><span class="tiny">Score</span><strong>${score(log)}</strong></div></div><p class="muted">${log.notes||"No notes added."}</p>`:`<p class="muted">Nothing logged for this date yet.</p>`}<div class="modal-actions"><button class="secondary-button" data-close>Close</button></div></div>`); }
 
 function startDictation(fieldId) {
   const SpeechRecognition=window.SpeechRecognition||window.webkitSpeechRecognition;
@@ -590,6 +673,17 @@ async function storePhoto(key,file) {
   try { const db=await openPhotoDB(); const tx=db.transaction("photos","readwrite"); tx.objectStore("photos").put(file,key); tx.oncomplete=()=>toast("Photo saved locally on this device"); }
   catch { toast("Photo preview selected, but local photo storage is unavailable."); }
 }
+async function getPhoto(key) {
+  try { const db=await openPhotoDB(); return await new Promise(resolve=>{ const request=db.transaction("photos").objectStore("photos").get(key); request.onsuccess=()=>resolve(request.result); request.onerror=()=>resolve(null); }); }
+  catch { return null; }
+}
+async function showPhotoComparison(day) {
+  modal(`<div class="modal-body"><p class="eyebrow">PHOTO PROGRESS</p><h2>Day 1 vs Day ${day}</h2><p class="muted">Drag each slider to compare. Photos stay local to this browser.</p><div id="photoComparison" class="stack"><div class="empty">Loading your local photos…</div></div><div class="modal-actions"><button class="secondary-button" data-close>Close</button></div></div>`);
+  const poses=["front","side","back"], container=document.querySelector("#photoComparison");
+  const photos=await Promise.all(poses.map(async pose=>[pose,await getPhoto(`checkin-1-${pose}`),await getPhoto(`checkin-${day}-${pose}`)]));
+  container.innerHTML=photos.map(([pose,start,current])=>`<div class="photo-compare-card"><p class="eyebrow">${pose.toUpperCase()}</p>${start&&current?`<div class="photo-compare" style="--reveal:50%"><img src="${URL.createObjectURL(start)}" alt="Day 1 ${pose}"><div class="photo-after"><img src="${URL.createObjectURL(current)}" alt="Day ${day} ${pose}"></div></div><input type="range" min="0" max="100" value="50" aria-label="${pose} photo comparison slider" data-compare-slider>`:`<div class="empty">Add both Day 1 and Day ${day} ${pose} photos to compare.</div>`}</div>`).join("");
+}
+document.addEventListener("input",e=>{ if(e.target.matches("[data-compare-slider]")) e.target.previousElementSibling.style.setProperty("--reveal",`${e.target.value}%`); });
 function loadSamples() {
   for(let i=0;i<9;i++){const d=parseDate(state.settings.startDate);d.setDate(d.getDate()+i);const key=localISO(d);state.daily[key]={habits:{waterGoal:true,proteinGoal:true,plannedLunch:true,workout:i%3!==2,bowelMovement:true},calories:1680+i*22,protein:132+i*2,fiber:21+(i%4),water:88+i*2,steps:8200+i*240,activeCalories:310+i*11,exerciseMinutes:35+(i%3)*10,sleep:6.5+(i%4)*.3,workoutCompleted:i%3!==2,poop:i%4===0?"no":"yes",bowelType:i%4===0?"none":"normal",bloating:6-(i%3),constipation:5-(i%3),energy:6+i%3,mood:7,cravings:4,reset:false,meals:[],exercises:{}};}
   state.checkins[1]={weight:180,waist:34.5,hips:44,thigh:25,arm:13.5,wins:"Started with a clear plan."};

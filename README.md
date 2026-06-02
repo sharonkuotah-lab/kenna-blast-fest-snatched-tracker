@@ -27,6 +27,18 @@ Phase 2.1 makes the app calmer and more personal for daily use:
 - Workout split browser with sets, reps, weight, notes, cardio tracking, and custom exercises
 - Clickable challenge calendar, empty trend states, extra event support, and expanded AI Coach tools
 
+## Phase 3 Coach Engine
+
+- Calmer command-center Home with a compact hero, mission chips, quick actions, forecast card, and weekly progress
+- Snatched Forecast Engine with estimated Blast Fest weight, goal pace, current pace, status, and one practical adjustment
+- Permanent RENPHO and tape-measure baseline for starting, previous, current, and total-change comparisons
+- Sunday review with weekly wins, the biggest bottleneck, and one realistic focus for the next week
+- Smart Coach alerts that deliberately surface one priority instead of a wall of warnings
+- One-click structured ChatGPT export with habits, official trends, forecast context, gut health, and saved coach notes
+- Local Day 1 versus later check-in photo comparisons with front, side, and back drag sliders
+- Progressive-overload cues showing the previous logged weight beside today's exercise entry
+- Reusable Whole Foods library with favorites, price, rating, macros, notes, and one-tap logging
+
 ## Features
 
 - Dashboard with event countdowns, challenge day, streak, next check-in, scores, progress bars, calorie dashboard, and daily coach feedback
