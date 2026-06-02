@@ -1,6 +1,6 @@
 # Kenna's Blast Fest Snatched Tracker
 
-A mobile-first, local-first Progressive Web App for a 45-day body recomposition challenge leading to Blast Fest on July 18, 2026. The interface is designed to be simple and repeatable: daily essentials first, deeper tracking only when useful.
+A mobile-first, local-first Progressive Web App for a 46-day body recomposition challenge leading to Blast Fest on July 18, 2026. The interface is designed to be simple and repeatable: daily essentials first, deeper tracking only when useful.
 
 ## Phase 2 UI Polish
 
@@ -59,16 +59,27 @@ Phase 2.1 makes the app calmer and more personal for daily use:
 - The “Am I On Track?” card projects July 18 weight, body fat, waist, and abdomen from the official check-in trend when enough data exists.
 - Every 9-day check-in can import expanded RENPHO and smart tape metrics, then generate wins, warnings, and forecast context.
 
+## Phase 5 Automation + ADHD Mode
+
+- Home now opens as a Smart Morning Dashboard: greeting, day number, Seattle and Blast Fest countdowns, Today's Top 3 Priorities, Today's Score, streaks, and quick actions.
+- Today's Score is simplified to the essentials only: protein, steps, water, workout, and check-in.
+- Protein, workout, step, check-in, and water streaks are tracked with a forgiving missed-day recovery message.
+- Nursing school routines now drive the daily briefing for class days, clinical days, clinical recovery, gym days, prep days, reset days, and off days.
+- A floating plus button gives one-tap access to water, protein, meals, workouts, voice notes, and steps without navigating.
+- Achievement cards now highlight meaningful wins such as first workout, 10,000 step day, body fat down, waist down, and official check-ins.
+- The Weekly Report summarizes wins, areas to improve, forecast, best habit, worst habit, and next-week focus with one-click copy.
+- Detailed tracking still exists, but it is tucked behind buttons, tabs, and expandable sections so daily use feels calm instead of crowded.
+
 ## Features
 
-- Dashboard with event countdowns, challenge day, streak, next check-in, scores, progress bars, calorie dashboard, and daily coach feedback
+- Smart Morning Dashboard with event countdowns, Top 3 priorities, Today's Score, streaks, quick actions, and missed-day recovery
 - Daily checklist with quick mode, full check-in, manual Apple Health fields, voice dictation, and emergency reset
 - Meal tracking with one-tap Whole Foods-style meals, custom meals, nutrition totals, and local meal photos
 - Gut health tracker for water, fiber, vegetables, kefir, probiotics, bowel movements, bloating, constipation, stress, and sleep
 - Repeating seven-day workout plan with exercise checkboxes and notes
 - Official check-ins on days 1, 9, 18, 27, 36, and 45, including RENPHO-style manual metrics, measurements, reflections, and local progress photos
 - Private random weigh-ins that never affect official weight charts
-- Progress charts, 45-day calendar, badges, calorie projection, and a copyable 9-day ChatGPT summary
+- Progress charts, challenge calendar, achievements, calorie projection, and a copyable 9-day ChatGPT summary
 - Soft-glam mobile design, offline support, installable PWA manifest, and no backend
 
 ## Run Locally
