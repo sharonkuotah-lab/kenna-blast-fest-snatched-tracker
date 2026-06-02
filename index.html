@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#f7eee9" />
+    <meta name="description" content="Kenna's 45-day soft glam accountability tracker for Blast Fest." />
+    <link rel="manifest" href="manifest.json" />
+    <link rel="stylesheet" href="styles.css?v=4" />
+    <title>Kenna's Snatched Tracker</title>
+  </head>
+  <body>
+    <header class="app-header">
+      <div>
+        <p class="eyebrow">KENNA'S 45-DAY RESET</p>
+        <h1 id="pageTitle">Dashboard</h1>
+      </div>
+      <button class="icon-button" id="notificationButton" aria-label="Enable reminders" title="Enable reminders">♡</button>
+    </header>
+
+    <main id="app" class="app-shell">
+      <section class="page active" data-page="dashboard">
+        <div id="dashboardContent"></div>
+      </section>
+
+      <section class="page" data-page="today">
+        <div class="section-heading">
+          <div><p class="eyebrow">TODAY ONLY</p><h2>Your daily basics</h2></div>
+          <button class="secondary-button" id="quickModeButton">Quick mode</button>
+        </div>
+        <div id="todayContent"></div>
+      </section>
+
+      <section class="page" data-page="nutrition">
+        <div class="section-heading"><div><p class="eyebrow">NUTRITION</p><h2>Meals that make this easier</h2></div></div>
+        <div id="nutritionContent"></div>
+      </section>
+
+      <section class="page" data-page="gut">
+        <div class="section-heading"><div><p class="eyebrow">GUT HEALTH</p><h2>Less bloat, more consistency</h2></div></div>
+        <div id="gutContent"></div>
+      </section>
+
+      <section class="page" data-page="workouts">
+        <div class="section-heading"><div><p class="eyebrow">MOVEMENT</p><h2>Your weekly split</h2></div></div>
+        <div id="workoutContent"></div>
+      </section>
+
+      <section class="page" data-page="progress">
+        <div class="section-heading"><div><p class="eyebrow">PROGRESS</p><h2>The habits are adding up</h2></div></div>
+        <div id="progressContent"></div>
+      </section>
+
+      <section class="page" data-page="checkins">
+        <div class="section-heading"><div><p class="eyebrow">EVERY 9 DAYS</p><h2>Official check-ins</h2></div></div>
+        <div id="checkinContent"></div>
+      </section>
+
+      <section class="page" data-page="coach">
+        <div class="section-heading"><div><p class="eyebrow">AI COACH</p><h2>Review the pattern</h2></div></div>
+        <div id="coachContent"></div>
+      </section>
+
+      <section class="page" data-page="settings">
+        <div class="section-heading"><div><p class="eyebrow">SETTINGS</p><h2>Make it yours</h2></div></div>
+        <div id="settingsContent"></div>
+      </section>
+    </main>
+
+    <nav class="bottom-nav" aria-label="Main navigation">
+      <button class="nav-item active" data-nav="dashboard"><span>⌂</span><small>Home</small></button>
+      <button class="nav-item" data-nav="today"><span>✓</span><small>Today</small></button>
+      <button class="nav-item" data-nav="nutrition"><span>◇</span><small>Meals</small></button>
+      <button class="nav-item" data-nav="gut"><span>◎</span><small>Gut</small></button>
+      <button class="nav-item" data-nav="workouts"><span>+</span><small>Move</small></button>
+      <button class="nav-item" data-nav="progress"><span>↗</span><small>Progress</small></button>
+      <button class="nav-item more-nav" data-nav="more"><span>•••</span><small>More</small></button>
+    </nav>
+
+    <dialog id="modal" class="modal"><div id="modalContent"></div></dialog>
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    <script src="app.js?v=4"></script>
+  </body>
+</html>
