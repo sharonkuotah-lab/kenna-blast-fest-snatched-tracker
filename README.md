@@ -50,6 +50,15 @@ Phase 2.1 makes the app calmer and more personal for daily use:
 - Logged meals can be edited for that specific day without changing the saved template.
 - Default templates include eggs and egg whites, protein shakes, kefir smoothies, Whole Foods meals, tortilla chips, coffee, and green tea with ginger and honey.
 
+## Official Baseline + On Track Forecast
+
+- June 2, 2026 is saved as the official Day 1 RENPHO and smart tape baseline.
+- Baseline metrics include weight, body fat, skeletal muscle, muscle mass, fat-free mass, visceral fat, subcutaneous fat, body water, protein %, BMR, metabolic age, waist, abdomen, and hip.
+- Official check-ins now generate a transformation Snatched Score based on body fat, waist, abdomen, weight, muscle mass, protein, and steps.
+- The app flags **Hydration Focus Week** when body water is below 48%.
+- The “Am I On Track?” card projects July 18 weight, body fat, waist, and abdomen from the official check-in trend when enough data exists.
+- Every 9-day check-in can import expanded RENPHO and smart tape metrics, then generate wins, warnings, and forecast context.
+
 ## Features
 
 - Dashboard with event countdowns, challenge day, streak, next check-in, scores, progress bars, calorie dashboard, and daily coach feedback

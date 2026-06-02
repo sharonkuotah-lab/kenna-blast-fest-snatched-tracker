@@ -65,13 +65,15 @@ const DEFAULT_SAVED_MEALS = [
 const DEFAULT_SETTINGS = {
   name: "Kenna / Sharon", startDate: "2026-06-02", endDate: "2026-07-18", eventName: "Blast Fest",
   miniEventDate: "2026-06-19", miniEventName: "Seattle Concert", heightFeet: 5, heightInches: 8, height: 68,
-  age: 25, sex: "female", startWeight: 180, goalWeight: 170,
+  age: 25, sex: "female", startWeight: 184.2, goalWeight: 170,
   activity: "moderate", intensity: "aggressive", waterGoal: 100, proteinGoal: 140,
   fiberGoal: 25, stepGoal: 10000, calorieTarget: 1750, deficitTarget: 650, units: "US"
 };
+const BASELINE_VERSION = "2026-06-02-official-renpho";
 const STARTING_BASELINE = {
-  weight: 183.6, bodyFat: 31.7, skeletalMuscle: 39.8, waist: 30.08, abdomen: 37.52,
-  hips: 47.56, bmr: 1598, bodyWater: 46.9, visceralFat: 10
+  weight: 184.2, bodyFat: 31.9, skeletalMuscle: 39.7, muscleMass: 118.2, fatFreeMass: 125.4,
+  visceralFat: 10, subcutaneousFat: 28.2, bodyWater: 46.7, proteinPercent: 15.8,
+  bmr: 1600, metabolicAge: 28, waist: 30.08, abdomen: 37.52, hips: 47.56
 };
 const WHOLE_FOODS_DEFAULTS = [
   { name:"Chicken + Rice + Broccoli", calories:540, protein:48, fiber:7, carbs:58, fat:14, sodium:"", price:"", notes:"Easy class-day lunch", rating:5, favorite:true },
@@ -122,12 +124,18 @@ function formatDate(value) { return parseDate(value).toLocaleDateString(undefine
 function saveState() { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
 
 function createDefaultState() {
-  return { settings: { ...DEFAULT_SETTINGS }, baseline: { ...STARTING_BASELINE }, daily: {}, checkins: {}, randomWeights: [], favorites: [], savedMeals: DEFAULT_SAVED_MEALS.map(cloneMealTemplate), wholeFoodsMeals: WHOLE_FOODS_DEFAULTS.map(x=>({...x})), groceries: GROCERY_DEFAULTS.map(name=>({name,done:false})), extraEvents: [], coachNotes: [], reminders: true, samplesLoaded: false };
+  return { settings: { ...DEFAULT_SETTINGS }, baseline: { ...STARTING_BASELINE }, baselineVersion: BASELINE_VERSION, daily: {}, checkins: { 1: officialBaselineCheckin() }, randomWeights: [], favorites: [], savedMeals: DEFAULT_SAVED_MEALS.map(cloneMealTemplate), wholeFoodsMeals: WHOLE_FOODS_DEFAULTS.map(x=>({...x})), groceries: GROCERY_DEFAULTS.map(name=>({name,done:false})), extraEvents: [], coachNotes: [], reminders: true, samplesLoaded: false };
 }
 function loadState() {
   try {
     const saved=JSON.parse(localStorage.getItem(STORAGE_KEY)), base=createDefaultState(), merged={...base,...saved,settings:{...base.settings,...(saved?.settings||{})}};
     merged.baseline={...base.baseline,...(saved?.baseline||{})};
+    if(saved?.baselineVersion!==BASELINE_VERSION) {
+      merged.baseline={...STARTING_BASELINE};
+      merged.baselineVersion=BASELINE_VERSION;
+      merged.settings.startWeight=STARTING_BASELINE.weight;
+      if(!saved?.checkins?.[1] || [180,183.6].includes(num(saved.checkins[1]?.weight))) merged.checkins={...(merged.checkins||{}),1:officialBaselineCheckin()};
+    }
     merged.wholeFoodsMeals=(saved?.wholeFoodsMeals||base.wholeFoodsMeals).map(x=>({...x}));
     merged.savedMeals=mergeSavedMeals(saved?.savedMeals, base.savedMeals);
     merged.settings.heightFeet=num(merged.settings.heightFeet,Math.floor(num(merged.settings.height,68)/12));
@@ -137,6 +145,7 @@ function loadState() {
   }
   catch { return createDefaultState(); }
 }
+function officialBaselineCheckin() { return { ...STARTING_BASELINE, weight:STARTING_BASELINE.weight, waterPercent:STARTING_BASELINE.bodyWater, date:"2026-06-02", wins:"Official Day 1 baseline saved. Muscle foundation is strong; the goal is keep muscle while reducing body fat.", nextFocus:"Hydration, protein, steps, and consistent meal logging." }; }
 function cloneMealTemplate(meal) { return {...meal, ingredients:[...(meal.ingredients||[])], tags:[...(meal.tags||[])], addons:(meal.addons||[]).map(x=>({...x}))}; }
 function mergeSavedMeals(savedMeals, defaults) {
   const list=(savedMeals||[]).map(cloneMealTemplate), ids=new Set(list.map(x=>x.id));
@@ -247,6 +256,51 @@ function forecast() {
   const recommendation=weeklyRate>=needed ? "Keep the routine steady. Consistency is doing the work." : smartPriority(logs).recommendation;
   return { current, estimated, needed, weeklyRate, pace, recommendation };
 }
+function metricValue(item, key) { return num(item?.[key] ?? (key==="bodyWater" ? item?.waterPercent : undefined)); }
+function officialSnapshot() { return officialCheckins().at(-1) || { day:1, ...STARTING_BASELINE }; }
+function transformationScore(snapshot=officialSnapshot()) {
+  const base=STARTING_BASELINE, recent=dailyEntries(9).filter(hasLogData);
+  const bodyFatDrop=metricValue(base,"bodyFat")-metricValue(snapshot,"bodyFat");
+  const waistDrop=metricValue(base,"waist")-metricValue(snapshot,"waist");
+  const abdomenDrop=metricValue(base,"abdomen")-metricValue(snapshot,"abdomen");
+  const weightDrop=metricValue(base,"weight")-metricValue(snapshot,"weight");
+  const muscleDelta=metricValue(snapshot,"muscleMass")-metricValue(base,"muscleMass");
+  let total=62 + bodyFatDrop*5 + waistDrop*4 + abdomenDrop*2 + weightDrop*.8 + Math.min(4,Math.max(-6,muscleDelta*2));
+  if(recent.length) total += pct(avg(recent,"protein"),state.settings.proteinGoal)*.03 + pct(avg(recent,"steps"),state.settings.stepGoal)*.03;
+  return Math.round(clamp(total));
+}
+function projectMetric(key) {
+  const logs=officialCheckins().filter(x=>metricValue(x,key)), current=officialSnapshot(), start={day:1,...STARTING_BASELINE}, remaining=daysRemaining(state.settings.endDate);
+  const currentValue=key==="weight" ? forecast().current : metricValue(current,key);
+  if(key==="weight") return { current:currentValue, projected:forecast().estimated, unit:"lbs" };
+  if(logs.length>=2) {
+    const first=logs[0], latest=logs.at(-1), rate=(metricValue(latest,key)-metricValue(first,key))/Math.max(1,latest.day-first.day);
+    return { current:metricValue(latest,key), projected:round(metricValue(latest,key)+rate*remaining, key==="waist"||key==="abdomen"?2:1), unit:key.includes("Fat")||key==="bodyWater"?"%":"in" };
+  }
+  return { current:metricValue(current,key)||metricValue(start,key), projected:"Needs Day 9", unit:key.includes("Fat")||key==="bodyWater"?"%":"in" };
+}
+function onTrackReport() {
+  const weight=projectMetric("weight"), bodyFat=projectMetric("bodyFat"), waist=projectMetric("waist"), abdomen=projectMetric("abdomen"), outlook=forecast();
+  const message=outlook.pace==="Ahead of goal"||outlook.pace==="On track" ? "Your current pattern is pointing in the right direction. Protect protein, steps, and sleep." : "The next lever is consistency: protein first, finish steps, and keep check-ins official.";
+  return { weight, bodyFat, waist, abdomen, message, pace:outlook.pace };
+}
+function checkinInsights(snapshot=officialSnapshot()) {
+  const previous=officialCheckins().at(-2), recent=dailyEntries(9).filter(hasLogData), wins=[], warnings=[];
+  if(!previous) wins.push("Official Day 1 baseline is locked. This is your true starting line.");
+  if(metricValue(snapshot,"muscleMass")>=metricValue(STARTING_BASELINE,"muscleMass")-.5) wins.push("Muscle is being protected. That supports the snatched look.");
+  if(previous && metricValue(snapshot,"bodyFat")<metricValue(previous,"bodyFat")) wins.push("Body fat decreased since the last official check-in.");
+  if(previous && metricValue(snapshot,"waist")<metricValue(previous,"waist")) wins.push("Waist measurement is moving in the right direction.");
+  if(previous && metricValue(snapshot,"abdomen")<metricValue(previous,"abdomen")) wins.push("Abdomen measurement improved, which often shows recomp before the scale does.");
+  if(metricValue(snapshot,"bodyWater") && metricValue(snapshot,"bodyWater")<48) warnings.push("Body water is under 48%. Hydration Focus Week: water, electrolytes if needed, steady meals, and sleep.");
+  if(recent.length && avg(recent,"protein")<130) warnings.push("Protein is still a main lever. Prioritize it before snacks.");
+  if(recent.length && avg(recent,"steps")<8000) warnings.push("Steps are below the visible-progress range. Add a short walk or treadmill finish.");
+  if(previous && metricValue(snapshot,"muscleMass")<metricValue(previous,"muscleMass")-1) warnings.push("Muscle mass dropped. Check protein, calories, strength training, and recovery.");
+  return { wins:wins.length?wins:["Keep collecting official data. The pattern starts after Day 9."], warnings:warnings.length?warnings:["No major warning from official metrics right now. Keep the basics steady."] };
+}
+function onTrackCard() {
+  const report=onTrackReport();
+  return `<div class="card forecast-card"><div class="row"><div><p class="eyebrow">AM I ON TRACK?</p><h3>If this pattern continues to July 18</h3></div><span class="pill">${report.pace}</span></div><div class="metric-grid"><div class="metric"><small>Weight</small><strong>${report.weight.projected}${report.weight.unit}</strong></div><div class="metric"><small>Body fat</small><strong>${report.bodyFat.projected}${typeof report.bodyFat.projected==="number"?report.bodyFat.unit:""}</strong></div><div class="metric"><small>Waist</small><strong>${report.waist.projected}${typeof report.waist.projected==="number"?report.waist.unit:""}</strong></div><div class="metric"><small>Abdomen</small><strong>${report.abdomen.projected}${typeof report.abdomen.projected==="number"?report.abdomen.unit:""}</strong></div></div><p class="tiny">${report.message}</p></div>`;
+}
 function smartPriority(logs=dailyEntries(7).filter(hasLogData)) {
   if(!logs.length) return { title:"Start with the basics", body:"Your first few logs will reveal the pattern. Today: water, protein, steps, and one meal you planned.", recommendation:"Log the basics today so your forecast can become personal." };
   const protein=avg(logs,"protein"), steps=avg(logs,"steps"), calories=avg(logs,"calories"), loggedDays=logs.length, workouts=logs.filter(x=>x.workoutCompleted).length;
@@ -316,7 +370,7 @@ function listCard(title, items) {
 
 function renderDashboard() {
   const log = dayLog(), snatched = score(log), gut = gutScore(log), check = nextCheckin();
-  const workout = WORKOUTS[workoutIndex()][0], outlook=forecast(), review=weeklyReview(), priority=smartPriority();
+  const workout = WORKOUTS[workoutIndex()][0], outlook=forecast(), review=weeklyReview(), priority=smartPriority(), transform=transformationScore();
   const events=[{name:state.settings.miniEventName,date:state.settings.miniEventDate},{name:state.settings.eventName,date:state.settings.endDate},...(state.extraEvents||[])].filter(x=>x.date>=todayKey()).sort((a,b)=>a.date.localeCompare(b.date));
   const nextEvent=events[0]||{name:state.settings.eventName,date:state.settings.endDate};
   const missions=[["Protein",pct(log.protein,state.settings.proteinGoal)>=100],["Water",pct(log.water,state.settings.waterGoal)>=100],["Workout",Boolean(log.workoutCompleted||log.activeRecovery)],["Steps",pct(log.steps,state.settings.stepGoal)>=100],["Sleep",num(log.sleep)>=7]];
@@ -331,6 +385,8 @@ function renderDashboard() {
     ${protocolCard()}
     <button class="card movement-card" data-go="workouts"><span><span class="eyebrow">TODAY'S MOVEMENT</span><strong>${workout}</strong><small>${log.workoutCompleted ? "Complete. Nice work." : "Tap to open today's exercises"}</small></span><span class="movement-arrow">→</span></button>
     <div class="card forecast-card"><div class="row"><div><p class="eyebrow">SNATCHED FORECAST</p><h3>Estimated ${formatDate(state.settings.endDate)} weight</h3></div><span class="pill">${outlook.pace}</span></div><div class="forecast-main"><strong>${outlook.estimated}</strong><span>lbs</span></div><div class="forecast-meta"><span>Need <b>${outlook.needed}</b> lbs/week</span><span>Current <b>${outlook.weeklyRate}</b> lbs/week</span></div><p class="tiny">${outlook.recommendation}</p></div>
+    ${onTrackCard()}
+    <div class="card"><div class="row"><div><p class="eyebrow">OFFICIAL TRANSFORMATION SCORE</p><h3>Body recomp, not just scale weight</h3></div><div class="ring micro-ring" style="--value:${transform}" data-label="${transform}"></div></div><p class="muted">Built from official body fat, waist, abdomen, weight, muscle mass, plus protein and steps once daily logs build up.</p></div>
     <div class="card weekly-card"><div class="row"><div><p class="eyebrow">WEEKLY PROGRESS</p><h3>${review.logs.length ? "Protect the rhythm" : "Your transformation starts here"}</h3></div><div class="ring micro-ring" style="--value:${Math.round(avg(review.logs,score))}" data-label="${Math.round(avg(review.logs,score))||0}"></div></div><p class="muted">${priority.body}</p></div>
     <div class="card"><div class="row"><div><p class="eyebrow">NEXT EVENT</p><h3>${nextEvent.name}</h3></div><span class="pill">${daysRemaining(nextEvent.date)} days</span></div><p class="muted">${formatDate(nextEvent.date)}${nextEvent.notes?` · ${nextEvent.notes}`:""}</p></div>
     <details class="card"><summary>Calories</summary><div class="detail-body"><div class="metric-grid"><div class="metric"><small>Eaten</small><strong>${num(log.calories)}</strong></div><div class="metric"><small>Est. burn</small><strong>${burned(log)}</strong></div><div class="metric"><small>Deficit</small><strong>${deficit(log)}</strong></div></div>${calorieSummary()}</div></details>
@@ -492,7 +548,12 @@ function renderProgress() {
       <div class="metric"><small>Current cycle</small><strong>${Math.ceil(getDayNumber()/9)}</strong></div>
     </div>
     ${chartCard("Official weight trend", CHECKIN_DAYS.map(day => ({ label:`D${day}`, value:num(state.checkins[day]?.weight) })).filter(x=>x.value), "Official weigh-ins only. Private random weigh-ins never change this chart.")}
+    ${chartCard("Official transformation score", CHECKIN_DAYS.map(day => state.checkins[day] ? ({ label:`D${day}`, value:transformationScore({day,...state.checkins[day]}) }) : null).filter(Boolean), "Body recomp score from official metrics plus protein and steps.")}
+    ${chartCard("Body fat trend", CHECKIN_DAYS.map(day => ({ label:`D${day}`, value:num(state.checkins[day]?.bodyFat) })).filter(x=>x.value))}
     ${chartCard("Waist trend", CHECKIN_DAYS.map(day => ({ label:`D${day}`, value:num(state.checkins[day]?.waist) })).filter(x=>x.value))}
+    ${chartCard("Abdomen trend", CHECKIN_DAYS.map(day => ({ label:`D${day}`, value:num(state.checkins[day]?.abdomen) })).filter(x=>x.value))}
+    ${chartCard("Muscle mass trend", CHECKIN_DAYS.map(day => ({ label:`D${day}`, value:num(state.checkins[day]?.muscleMass) })).filter(x=>x.value))}
+    ${chartCard("Body water trend", CHECKIN_DAYS.map(day => ({ label:`D${day}`, value:metricValue(state.checkins[day],"bodyWater") })).filter(x=>x.value))}
     ${chartCard("Snatched Score", logs.map(x=>({label:formatDate(x.date),value:score(x)})))}
     ${chartCard("Calories consumed", logs.map(x=>({label:formatDate(x.date),value:num(x.calories)})).filter(x=>x.value))}
     ${chartCard("Average calorie deficit", logs.map(x=>({label:formatDate(x.date),value:deficit(x)})).filter(x=>x.value))}
@@ -533,11 +594,14 @@ function comparisonRow(label,start,previous,current,unit) {
 }
 
 function renderCheckins() {
-  const current=getDayNumber(), completed=officialCheckins(), latest=completed.at(-1), previous=completed.at(-2), baseline=state.baseline;
+  const current=getDayNumber(), completed=officialCheckins(), latest=completed.at(-1), previous=completed.at(-2), baseline=state.baseline, insights=checkinInsights(latest||baseline), transform=transformationScore(latest||baseline);
   document.querySelector("#checkinContent").innerHTML = `
     <div class="card hero-card"><p class="eyebrow" style="color:#f7d9d7">EDITORIAL WELLNESS REPORT</p><h2>Your official glow-up log</h2><p class="muted">Check in every nine days. Observe the pattern without letting scale noise run the day.</p></div>
-    <div class="card"><div class="row"><div><p class="eyebrow">STARTING BASELINE</p><h3>Your permanent reference point</h3></div><span class="pill">RENPHO + TAPE</span></div><div class="baseline-grid">${[["Weight",baseline.weight,"lbs"],["Body fat",baseline.bodyFat,"%"],["Skeletal muscle",baseline.skeletalMuscle,"%"],["Waist",baseline.waist,"in"],["Abdomen",baseline.abdomen,"in"],["Hip",baseline.hips,"in"],["BMR",baseline.bmr,""],["Body water",baseline.bodyWater,"%"],["Visceral fat",baseline.visceralFat,""]].map(([label,value,unit])=>`<div><small>${label}</small><strong>${value}${unit}</strong></div>`).join("")}</div></div>
-    <div class="card"><div class="row"><div><p class="eyebrow">WHAT CHANGED?</p><h3>Starting · previous · current</h3></div><span class="pill">OFFICIAL ONLY</span></div>${comparisonRow("Weight",baseline.weight,previous?.weight,latest?.weight,"lbs")}${comparisonRow("Waist",baseline.waist,previous?.waist,latest?.waist,"in")}${comparisonRow("Hip",baseline.hips,previous?.hips,latest?.hips,"in")}</div>
+    <div class="card"><div class="row"><div><p class="eyebrow">TRANSFORMATION SCORE</p><h3>${transform}/100</h3></div><div class="ring micro-ring" style="--value:${transform}" data-label="${transform}"></div></div><p class="muted">This score weights body fat, waist, abdomen, weight, muscle mass, protein, and steps. Day 1 starts at 62.</p></div>
+    ${onTrackCard()}
+    <div class="card"><div class="row"><div><p class="eyebrow">STARTING BASELINE</p><h3>June 2 official RENPHO + tape</h3></div><span class="pill">DAY 1</span></div><div class="baseline-grid">${[["Weight",baseline.weight,"lbs"],["Body fat",baseline.bodyFat,"%"],["Skeletal muscle",baseline.skeletalMuscle,"%"],["Muscle mass",baseline.muscleMass,"lbs"],["Fat-free mass",baseline.fatFreeMass,"lbs"],["Visceral fat",baseline.visceralFat,""],["Subcutaneous",baseline.subcutaneousFat,"%"],["Body water",baseline.bodyWater,"%"],["Protein",baseline.proteinPercent,"%"],["BMR",baseline.bmr,""],["Metabolic age",baseline.metabolicAge,""],["Waist",baseline.waist,"in"],["Abdomen",baseline.abdomen,"in"],["Hip",baseline.hips,"in"]].map(([label,value,unit])=>`<div><small>${label}</small><strong>${value}${unit}</strong></div>`).join("")}</div></div>
+    <div class="card"><div class="row"><div><p class="eyebrow">WHAT CHANGED?</p><h3>Starting · previous · current</h3></div><span class="pill">OFFICIAL ONLY</span></div>${comparisonRow("Weight",baseline.weight,previous?.weight,latest?.weight,"lbs")}${comparisonRow("Body fat",baseline.bodyFat,previous?.bodyFat,latest?.bodyFat,"%")}${comparisonRow("Muscle mass",baseline.muscleMass,previous?.muscleMass,latest?.muscleMass,"lbs")}${comparisonRow("Waist",baseline.waist,previous?.waist,latest?.waist,"in")}${comparisonRow("Abdomen",baseline.abdomen,previous?.abdomen,latest?.abdomen,"in")}${comparisonRow("Hip",baseline.hips,previous?.hips,latest?.hips,"in")}</div>
+    <div class="card"><div class="row"><div><p class="eyebrow">AUTO REVIEW</p><h3>Wins + warnings</h3></div><span class="pill">COACH</span></div><div class="grid-2"><div class="feedback"><strong>Wins</strong>${insights.wins.map(x=>`<p class="tiny">✓ ${x}</p>`).join("")}</div><div class="feedback"><strong>Warnings</strong>${insights.warnings.map(x=>`<p class="tiny">○ ${x}</p>`).join("")}</div></div></div>
     <div class="card"><div class="row"><div><p class="eyebrow">PHOTO PROGRESS</p><h3>Compare your official photos</h3></div><span class="pill">STAYS LOCAL</span></div><p class="muted">See Day 1 beside a later official check-in. Photos never leave this browser.</p><div class="action-row">${CHECKIN_DAYS.slice(1).map(day=>`<button class="secondary-button" data-photo-compare="${day}">Day 1 vs ${day}</button>`).join("")}</div></div>
     <div class="card"><p>Official check-ins are the only weights used for trends. Daily scale noise is not the assignment.</p><div class="spacer"></div><button class="secondary-button" data-action="random-weight">Log a private random weigh-in</button></div>
     <div class="card"><h3>Official schedule</h3>${CHECKIN_DAYS.map(day=>`<div class="checkin-item row"><div><strong>Day ${day} · ${formatDate(challengeDate(day))}</strong><div class="tiny">${state.checkins[day]?.weight ? `${state.checkins[day].weight} lbs · waist ${state.checkins[day].waist || "—"}` : day===current ? "Your official check-in is ready." : "Not logged yet"}</div></div><button class="secondary-button" data-checkin="${day}">${state.checkins[day]?"Edit":"Open"}</button></div>`).join("")}</div>
@@ -547,8 +611,9 @@ function renderCheckins() {
 function checkinModal(day) {
   const x=state.checkins[day]||{};
   modal(`<div class="modal-body"><p class="eyebrow">OFFICIAL CHECK-IN</p><h2>Day ${day}</h2><p class="muted">${formatDate(challengeDate(day))} · honest data, zero judgment.</p><div class="spacer"></div><form id="checkinForm" data-day="${day}"><div class="form-grid">
-    ${field("Official weight","weight",x.weight,"number",'step="0.1"')}${field("Body fat %","bodyFat",x.bodyFat,"number",'step="0.1"')}${field("Muscle %","muscle",x.muscle,"number",'step="0.1"')}${field("Water %","waterPercent",x.waterPercent,"number",'step="0.1"')}
-    ${field("Visceral fat","visceralFat",x.visceralFat)}${field("Metabolic age","metabolicAge",x.metabolicAge)}${field("Waist","waist",x.waist,"number",'step="0.01"')}${field("Abdomen","abdomen",x.abdomen,"number",'step="0.01"')}${field("Hips","hips",x.hips,"number",'step="0.01"')}
+    ${field("Official weight","weight",x.weight,"number",'step="0.1"')}${field("Body fat %","bodyFat",x.bodyFat,"number",'step="0.1"')}${field("Skeletal muscle %","skeletalMuscle",x.skeletalMuscle||x.muscle,"number",'step="0.1"')}${field("Muscle mass lbs","muscleMass",x.muscleMass,"number",'step="0.1"')}
+    ${field("Fat-free mass lbs","fatFreeMass",x.fatFreeMass,"number",'step="0.1"')}${field("Visceral fat","visceralFat",x.visceralFat)}${field("Subcutaneous fat %","subcutaneousFat",x.subcutaneousFat,"number",'step="0.1"')}${field("Body water %","bodyWater",x.bodyWater||x.waterPercent,"number",'step="0.1"')}
+    ${field("Protein %","proteinPercent",x.proteinPercent,"number",'step="0.1"')}${field("BMR kcal","bmr",x.bmr)}${field("Metabolic age","metabolicAge",x.metabolicAge)}${field("Waist","waist",x.waist,"number",'step="0.01"')}${field("Abdomen","abdomen",x.abdomen,"number",'step="0.01"')}${field("Hips","hips",x.hips,"number",'step="0.01"')}
     ${field("Chest","chest",x.chest,"number",'step="0.1"')}${field("Arm","arm",x.arm,"number",'step="0.1"')}${field("Thigh","thigh",x.thigh,"number",'step="0.1"')}
     <label>Front photo<input type="file" accept="image/*" data-photo="checkin-${day}-front"></label><label>Side photo<input type="file" accept="image/*" data-photo="checkin-${day}-side"></label><label>Back photo<input type="file" accept="image/*" data-photo="checkin-${day}-back"></label>
     ${noteField("Outfit fit notes","outfit",x.outfit)}${noteField("Bloating notes","bloatingNotes",x.bloatingNotes)}${noteField("Gut health notes","gutNotes",x.gutNotes)}${noteField("What went well?","wins",x.wins)}${noteField("What needs fixing?","challenges",x.challenges)}${noteField("Next 9-day focus","nextFocus",x.nextFocus)}
@@ -564,6 +629,9 @@ Dates: ${logs.length ? `${formatDate(logs[0].date)} - ${formatDate(logs.at(-1).d
 Day range: ${logs.length ? `${getDayNumber(logs[0].date)} - ${getDayNumber(logs.at(-1).date)}` : "—"}
 Official weigh-in: ${official.weight || "—"}
 Waist: ${official.waist || "—"}
+Body fat: ${official.bodyFat || "—"}%
+Muscle mass: ${official.muscleMass || "—"} lbs
+Body water: ${metricValue(official,"bodyWater") || "—"}%
 Average calories: ${avg(logs,"calories") || "—"}
 Average protein: ${avg(logs,"protein") || "—"}g
 Average fiber: ${avg(logs,"fiber") || "—"}g
@@ -603,8 +671,11 @@ Current official weight: ${latestOfficialWeight()} lbs
 Goal weight: ${state.settings.goalWeight} lbs
 Forecast Blast Fest weight: ${outlook.estimated} lbs
 Forecast pace: ${outlook.pace}
+Transformation Snatched Score: ${transformationScore()}/100
 Needed rate: ${outlook.needed} lbs/week
 Current estimated rate: ${outlook.weeklyRate} lbs/week
+Projected July 18 body fat: ${onTrackReport().bodyFat.projected}${typeof onTrackReport().bodyFat.projected==="number"?"%":""}
+Projected July 18 waist: ${onTrackReport().waist.projected}${typeof onTrackReport().waist.projected==="number"?" in":""}
 9-day calories average: ${avg(logs,"calories")||"—"}
 9-day protein average: ${avg(logs,"protein")||"—"}g
 9-day fiber average: ${avg(logs,"fiber")||"—"}g
@@ -613,7 +684,7 @@ Current estimated rate: ${outlook.weeklyRate} lbs/week
 9-day sleep average: ${avg(logs,"sleep")||"—"} hours
 Workouts: ${logs.filter(x=>x.workoutCompleted).length}/${logs.length||0}
 Gut health score average: ${avg(logs,gutScore)||"—"}/100
-Official check-ins: ${official.length?official.map(x=>`Day ${x.day}: ${x.weight} lbs, waist ${x.waist||"—"} in`).join(" | "):"None logged yet"}
+Official check-ins: ${official.length?official.map(x=>`Day ${x.day}: ${x.weight} lbs, body fat ${x.bodyFat||"—"}%, muscle mass ${x.muscleMass||"—"} lbs, waist ${x.waist||"—"} in, abdomen ${x.abdomen||"—"} in, body water ${metricValue(x,"bodyWater")||"—"}%`).join(" | "):"None logged yet"}
 Coach priority: ${priority.title}. ${priority.recommendation}
 Saved coach notes: ${(state.coachNotes||[]).map(x=>x.text).join(" | ")||"—"}
 Please analyze this progress and give me one main priority, two practical adjustments, and one thing to keep doing.`;
@@ -644,7 +715,7 @@ function renderSettings() {
       ${field("Goal weight","settings.goalWeight",s.goalWeight,"number",'step="0.1"')}${selectField("Activity level","settings.activity",s.activity,["sedentary","light","moderate","active"])}${selectField("Goal intensity","settings.intensity",s.intensity,["moderate","aggressive"])}
       ${field("Water goal oz","settings.waterGoal",s.waterGoal)}${field("Protein goal g","settings.proteinGoal",s.proteinGoal)}${field("Fiber goal g","settings.fiberGoal",s.fiberGoal)}${field("Step goal","settings.stepGoal",s.stepGoal)}${field("Calorie target","settings.calorieTarget",s.calorieTarget)}${field("Deficit target","settings.deficitTarget",s.deficitTarget)}
     </div><p class="tiny">Height display: ${s.heightFeet}′${s.heightInches}″</p></div>
-    <div class="card"><p class="eyebrow">PERMANENT BASELINE</p><h3>Your starting RENPHO + tape snapshot</h3><p class="muted">These values anchor every official comparison.</p><div class="spacer"></div><div class="form-grid">${field("Weight","baseline.weight",state.baseline.weight,"number",'step="0.1"')}${field("Body fat %","baseline.bodyFat",state.baseline.bodyFat,"number",'step="0.1"')}${field("Skeletal muscle %","baseline.skeletalMuscle",state.baseline.skeletalMuscle,"number",'step="0.1"')}${field("Waist","baseline.waist",state.baseline.waist,"number",'step="0.01"')}${field("Abdomen","baseline.abdomen",state.baseline.abdomen,"number",'step="0.01"')}${field("Hip","baseline.hips",state.baseline.hips,"number",'step="0.01"')}${field("BMR","baseline.bmr",state.baseline.bmr)}${field("Body water %","baseline.bodyWater",state.baseline.bodyWater,"number",'step="0.1"')}${field("Visceral fat","baseline.visceralFat",state.baseline.visceralFat)}</div></div>
+    <div class="card"><p class="eyebrow">PERMANENT BASELINE</p><h3>Your June 2 RENPHO + tape snapshot</h3><p class="muted">These values anchor every official comparison.</p><div class="spacer"></div><div class="form-grid">${field("Weight","baseline.weight",state.baseline.weight,"number",'step="0.1"')}${field("Body fat %","baseline.bodyFat",state.baseline.bodyFat,"number",'step="0.1"')}${field("Skeletal muscle %","baseline.skeletalMuscle",state.baseline.skeletalMuscle,"number",'step="0.1"')}${field("Muscle mass lbs","baseline.muscleMass",state.baseline.muscleMass,"number",'step="0.1"')}${field("Fat-free mass lbs","baseline.fatFreeMass",state.baseline.fatFreeMass,"number",'step="0.1"')}${field("Visceral fat","baseline.visceralFat",state.baseline.visceralFat)}${field("Subcutaneous fat %","baseline.subcutaneousFat",state.baseline.subcutaneousFat,"number",'step="0.1"')}${field("Body water %","baseline.bodyWater",state.baseline.bodyWater,"number",'step="0.1"')}${field("Protein %","baseline.proteinPercent",state.baseline.proteinPercent,"number",'step="0.1"')}${field("BMR","baseline.bmr",state.baseline.bmr)}${field("Metabolic age","baseline.metabolicAge",state.baseline.metabolicAge)}${field("Waist","baseline.waist",state.baseline.waist,"number",'step="0.01"')}${field("Abdomen","baseline.abdomen",state.baseline.abdomen,"number",'step="0.01"')}${field("Hip","baseline.hips",state.baseline.hips,"number",'step="0.01"')}</div></div>
     <div class="card"><h3>TDEE calculator</h3><div class="spacer"></div><div class="grid-2"><div><span class="tiny">BMR</span><strong>${bmr()} cal</strong></div><div><span class="tiny">Maintenance</span><strong>${tdee()} cal</strong></div><div><span class="tiny">Moderate target</span><strong>${tdee()-500} cal</strong></div><div><span class="tiny">Aggressive target</span><strong>${Math.max(1200,tdee()-750)} cal</strong></div></div><div class="spacer"></div>${s.calorieTarget<1200?'<div class="feedback">Your target is too low for this tracker. Choose a more sustainable calorie target and seek professional guidance for personalized needs.</div>':'<p class="tiny">Recommended targets avoid extreme starvation calories. Individual needs vary.</p>'}</div>
     <div class="card"><h3>Routine-based reminders</h3><p class="muted">${routineToday()[2].join(" · ")}</p><div class="spacer"></div><button class="secondary-button" data-action="notifications">Enable optional browser reminders</button></div>
     <div class="card"><h3>Starter data</h3><p class="muted">Load sample days to preview charts, or clear all tracker data when you are ready for a fresh start.</p><div class="spacer"></div><div class="row wrap"><button class="secondary-button" data-action="samples">Load sample data</button><button class="danger-button" data-action="clear-data">Clear all data</button></div></div>
@@ -720,7 +791,9 @@ document.addEventListener("submit", e => {
   if(e.target.id==="checkinForm") {
     e.preventDefault(); const form=e.target, day=num(form.dataset.day), data={};
     form.querySelectorAll("[data-field]").forEach(input=>data[input.dataset.field]=coerce(input));
+    if(data.bodyWater && !data.waterPercent) data.waterPercent=data.bodyWater;
     state.checkins[day]=data; saveState(); document.querySelector("#modal").close(); toast(`Day ${day} official check-in saved`); render();
+    if(day===1) { state.baseline={...state.baseline,...data, bodyWater:metricValue(data,"bodyWater")}; state.baselineVersion=BASELINE_VERSION; saveState(); render(); }
   }
 });
 document.querySelector("#quickModeButton").addEventListener("click",()=>{quickMode=!quickMode; document.querySelector("#quickModeButton").textContent=quickMode?"Full check-in":"Quick log"; renderToday();});
