@@ -9,9 +9,10 @@ Phase 2 adds a more elevated soft-glam wellness identity while preserving the co
 ### Design System
 
 - Palette: warm cream `#f8f1ec`, soft blush `#e7b7b6`, dusty rose `#bd7180`, mauve `#a98791`, champagne `#bc945e`, and espresso `#241b1c`
-- Headings: [Playfair Display](https://fonts.google.com/specimen/Playfair+Display)
-- Body text: [DM Sans](https://fonts.google.com/specimen/DM+Sans)
-- Decorative brand mark: [Italiana](https://fonts.google.com/specimen/Italiana)
+- Display headings: [Bodoni Moda](https://fonts.google.com/specimen/Bodoni+Moda), inspired by the Bodoni / Old Money reference
+- Editorial accents: [Playfair Display SC](https://fonts.google.com/specimen/Playfair+Display+SC) and [Libre Baskerville](https://fonts.google.com/specimen/Libre+Baskerville)
+- Functional UI text: [Montserrat](https://fonts.google.com/specimen/Montserrat) with [Source Sans 3](https://fonts.google.com/specimen/Source+Sans+3) fallback
+- Soft secondary sans: [Josefin Sans](https://fonts.google.com/specimen/Josefin+Sans) and [Didact Gothic](https://fonts.google.com/specimen/Didact+Gothic)
 - UI language: translucent glass cards, editorial spacing, rounded corners, pill buttons, restrained gradients, and large mobile-friendly touch targets
 
 ## Phase 2.1 Routine Integration
