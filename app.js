@@ -40,6 +40,28 @@ const QUICK_MEALS = [
   ["Tortilla Chips", "Snack", 210, 3, 2, 28, 10],
   ["Green Smoothie", "Snack", 230, 18, 8, 33, 5]
 ];
+const DEFAULT_SAVED_MEALS = [
+  { id:"eggs-base", name:"Eggs + Egg Whites Base", category:"breakfast", calories:220, protein:25, fiber:0, carbs:2, fat:12, sodium:"", ingredients:["2 eggs","1/3 cup egg whites"], notes:"Base breakfast. Customize with add-ons depending on hunger.", tags:["breakfast","high protein","quick","favorite"], favorite:true, addons:[
+    {name:"Avocado", calories:120, protein:2, fiber:5, carbs:6, fat:11},
+    {name:"Banana", calories:105, protein:1, fiber:3, carbs:27, fat:0},
+    {name:"Cheese", calories:110, protein:7, fiber:0, carbs:1, fat:9},
+    {name:"Toast", calories:100, protein:4, fiber:2, carbs:18, fat:1},
+    {name:"Fruit", calories:80, protein:1, fiber:3, carbs:20, fat:0},
+    {name:"Coffee", calories:30, protein:0, fiber:0, carbs:5, fat:1},
+    {name:"Green tea", calories:0, protein:0, fiber:0, carbs:0, fat:0}
+  ]},
+  { id:"eggs-avocado", name:"Eggs + Egg Whites + Avocado", category:"breakfast", calories:340, protein:27, fiber:5, carbs:8, fat:23, sodium:"", ingredients:["2 eggs","1/3 cup egg whites","Avocado"], notes:"Higher-fat breakfast that keeps fullness up.", tags:["breakfast","high protein","favorite"], favorite:true, addons:[] },
+  { id:"protein-shake-fruit", name:"Protein Shake + Fruit", category:"snack", calories:280, protein:32, fiber:6, carbs:30, fat:5, sodium:"", ingredients:["Protein powder","Fruit","Water or milk"], notes:"Fast protein when meals are delayed.", tags:["high protein","quick","snack","favorite"], favorite:true, addons:[] },
+  { id:"kefir-smoothie", name:"Kefir + Chia/Flax Smoothie", category:"snack", calories:320, protein:24, fiber:11, carbs:35, fat:10, sodium:"", ingredients:["Kefir","Chia seeds","Flax seeds","Fruit"], notes:"Gut-health smoothie. Increase fiber slowly.", tags:["high protein","quick","favorite"], favorite:true, addons:[] },
+  { id:"wf-chicken-rice-broccoli", name:"Whole Foods Chicken + Rice + Broccoli", category:"lunch", calories:540, protein:48, fiber:7, carbs:58, fat:14, sodium:"", ingredients:["Chicken","Rice","Broccoli"], notes:"Easy class-day lunch.", tags:["Whole Foods","high protein","favorite"], favorite:true, addons:[] },
+  { id:"wf-salmon-potatoes", name:"Whole Foods Salmon + Potatoes + Green Beans", category:"dinner", calories:610, protein:43, fiber:8, carbs:52, fat:25, sodium:"", ingredients:["Salmon","Potatoes","Green beans"], notes:"Repeatable dinner.", tags:["Whole Foods","high protein","favorite"], favorite:true, addons:[] },
+  { id:"wf-turkey-bowl", name:"Whole Foods Turkey Bowl", category:"lunch", calories:520, protein:46, fiber:9, carbs:55, fat:13, sodium:"", ingredients:["Turkey","Rice","Vegetables"], notes:"Simple meal-prep bowl.", tags:["Whole Foods","high protein","quick"], favorite:false, addons:[] },
+  { id:"wf-chicken-mash", name:"Whole Foods Chicken + Mashed Potatoes + Green Beans", category:"dinner", calories:570, protein:45, fiber:7, carbs:55, fat:17, sodium:"", ingredients:["Chicken","Mashed potatoes","Green beans"], notes:"Comfort meal that still hits protein.", tags:["Whole Foods","high protein"], favorite:false, addons:[] },
+  { id:"wf-orange-chicken", name:"Whole Foods Orange Chicken + Rice + Broccoli", category:"dinner", calories:760, protein:34, fiber:6, carbs:88, fat:27, sodium:"", ingredients:["Orange chicken","Rice","Broccoli"], notes:"Higher calorie. Use when planned, not random.", tags:["Whole Foods","higher calorie"], favorite:false, addons:[] },
+  { id:"chips-serving", name:"Tortilla Chips Serving", category:"snack", calories:210, protein:3, fiber:2, carbs:28, fat:10, sodium:"", ingredients:["Tortilla chips"], notes:"Log the serving and move on.", tags:["snack","quick"], favorite:false, addons:[] },
+  { id:"coffee", name:"Cappuccino / Coffee", category:"drink", calories:30, protein:0, fiber:0, carbs:5, fat:1, sodium:"", ingredients:["Coffee"], notes:"Adjust if milk or syrup changes.", tags:["drink","quick"], favorite:false, addons:[] },
+  { id:"green-tea-honey", name:"Green Tea with Ginger + Honey", category:"drink", calories:35, protein:0, fiber:0, carbs:9, fat:0, sodium:"", ingredients:["Green tea","Ginger","Honey"], notes:"Hydration-friendly warm drink.", tags:["drink","quick"], favorite:false, addons:[] }
+];
 const DEFAULT_SETTINGS = {
   name: "Kenna / Sharon", startDate: "2026-06-02", endDate: "2026-07-18", eventName: "Blast Fest",
   miniEventDate: "2026-06-19", miniEventName: "Seattle Concert", heightFeet: 5, heightInches: 8, height: 68,
@@ -100,19 +122,52 @@ function formatDate(value) { return parseDate(value).toLocaleDateString(undefine
 function saveState() { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
 
 function createDefaultState() {
-  return { settings: { ...DEFAULT_SETTINGS }, baseline: { ...STARTING_BASELINE }, daily: {}, checkins: {}, randomWeights: [], favorites: [], wholeFoodsMeals: WHOLE_FOODS_DEFAULTS.map(x=>({...x})), groceries: GROCERY_DEFAULTS.map(name=>({name,done:false})), extraEvents: [], coachNotes: [], reminders: true, samplesLoaded: false };
+  return { settings: { ...DEFAULT_SETTINGS }, baseline: { ...STARTING_BASELINE }, daily: {}, checkins: {}, randomWeights: [], favorites: [], savedMeals: DEFAULT_SAVED_MEALS.map(cloneMealTemplate), wholeFoodsMeals: WHOLE_FOODS_DEFAULTS.map(x=>({...x})), groceries: GROCERY_DEFAULTS.map(name=>({name,done:false})), extraEvents: [], coachNotes: [], reminders: true, samplesLoaded: false };
 }
 function loadState() {
   try {
     const saved=JSON.parse(localStorage.getItem(STORAGE_KEY)), base=createDefaultState(), merged={...base,...saved,settings:{...base.settings,...(saved?.settings||{})}};
     merged.baseline={...base.baseline,...(saved?.baseline||{})};
     merged.wholeFoodsMeals=(saved?.wholeFoodsMeals||base.wholeFoodsMeals).map(x=>({...x}));
+    merged.savedMeals=mergeSavedMeals(saved?.savedMeals, base.savedMeals);
     merged.settings.heightFeet=num(merged.settings.heightFeet,Math.floor(num(merged.settings.height,68)/12));
     merged.settings.heightInches=num(merged.settings.heightInches,num(merged.settings.height,68)%12);
     merged.settings.height=merged.settings.heightFeet*12+merged.settings.heightInches;
     return merged;
   }
   catch { return createDefaultState(); }
+}
+function cloneMealTemplate(meal) { return {...meal, ingredients:[...(meal.ingredients||[])], tags:[...(meal.tags||[])], addons:(meal.addons||[]).map(x=>({...x}))}; }
+function mergeSavedMeals(savedMeals, defaults) {
+  const list=(savedMeals||[]).map(cloneMealTemplate), ids=new Set(list.map(x=>x.id));
+  defaults.forEach(meal=>{ if(!ids.has(meal.id)) list.push(cloneMealTemplate(meal)); });
+  return list;
+}
+function mealId() { return `meal-${Date.now()}-${Math.random().toString(16).slice(2)}`; }
+function mealTemplateFromLegacy(m) {
+  return { id:mealId(), name:m.name, category:m.category||m.type||"meal", calories:num(m.calories), protein:num(m.protein), fiber:num(m.fiber), carbs:num(m.carbs), fat:num(m.fat), sodium:m.sodium||"", ingredients:m.ingredients||[], notes:m.notes||"", tags:m.tags||[], favorite:Boolean(m.favorite), addons:m.addons||[], useCount:num(m.useCount), lastUsed:m.lastUsed||"" };
+}
+function loggedMealFromTemplate(template, overrides={}) {
+  return { logId:mealId(), templateId:template.id||"", name:template.name, type:template.category||"meal", category:template.category||"meal", calories:num(template.calories), protein:num(template.protein), fiber:num(template.fiber), carbs:num(template.carbs), fat:num(template.fat), sodium:template.sodium||"", ingredients:[...(template.ingredients||[])], notes:template.notes||"", tags:[...(template.tags||[])], addons:[], photoKey:template.photoKey||"", ...overrides };
+}
+function recalcMealTotals(log=dayLog()) {
+  ["calories","protein","fiber","carbs","fat"].forEach(key=>log[key]=(log.meals||[]).reduce((sum,meal)=>sum+num(meal[key]),0));
+}
+function sortedSavedMeals() {
+  return [...(state.savedMeals||[])].sort((a,b)=>
+    Number(Boolean(b.favorite))-Number(Boolean(a.favorite)) ||
+    String(b.lastUsed||"").localeCompare(String(a.lastUsed||"")) ||
+    num(b.useCount)-num(a.useCount) ||
+    a.name.localeCompare(b.name)
+  );
+}
+function findSavedMeal(id) { return (state.savedMeals||[]).find(x=>x.id===id); }
+function touchTemplate(id) { const m=findSavedMeal(id); if(m){ m.lastUsed=todayKey(); m.useCount=num(m.useCount)+1; } }
+function addMealObject(meal, {touch=true}={}) {
+  const log=dayLog(); log.meals ||= [];
+  log.meals.push({...meal, logId:meal.logId||mealId()});
+  if(touch && meal.templateId) touchTemplate(meal.templateId);
+  recalcMealTotals(log); saveState(); toast(`${meal.name} logged`); render();
 }
 
 function bmr() {
@@ -342,10 +397,54 @@ function renderNutrition() {
     <div class="subnav">${[["meals","Meals"],["gut","Gut"],["grocery","Grocery"],["wholefoods","Whole Foods"]].map(([key,label])=>`<button class="${nutritionTab===key?"active":""}" data-nutrition-tab="${key}">${label}</button>`).join("")}</div>
     ${nutritionTab==="gut" ? gutPanel(log) : nutritionTab==="grocery" ? groceryPanel() : nutritionTab==="wholefoods" ? wholeFoodsPanel() : `
     <div class="card hero-card"><p class="eyebrow" style="color:#f7d9d7">TODAY'S NOURISHMENT</p><h2>${num(log.calories)} calories</h2><p class="muted">Build the plate around protein. Keep the rest simple.</p><div class="spacer"></div>${progressRow("Protein",log.protein,state.settings.proteinGoal,"g")}</div>
-    <div class="card"><div class="row"><div><p class="eyebrow">SAVED FAVORITES</p><h3>Whole Foods quick add</h3></div><button class="secondary-button" data-action="custom-meal">+ Custom</button></div><div class="spacer"></div><div class="quick-scroll">${QUICK_MEALS.map((m,i)=>`<button class="quick-add" data-quick-meal="${i}"><span class="meal-art">✦</span><strong>${m[0]}</strong><div class="chip-row"><span class="meal-chip">${m[2]} cal</span><span class="meal-chip">${m[3]}g P</span><span class="meal-chip">${m[4]}g fiber</span></div></button>`).join("")}</div></div>
-    <div class="card"><h3>Meals logged today</h3>${meals.length ? meals.map((m,i)=>`<div class="meal-item row"><div><strong>${m.name}</strong><div class="tiny">${m.type} · ${m.calories} cal · ${m.protein}g protein · ${m.fiber}g fiber</div></div><button class="secondary-button" data-remove-meal="${i}">Remove</button></div>`).join("") : `<div class="empty">No meals logged yet. Your first meal will show up here.</div>`}</div>
+    ${savedMealsPanel()}
+    <div class="card"><h3>Meals logged today</h3>${meals.length ? meals.map((m,i)=>`<div class="meal-item row"><div><strong>${m.name}</strong><div class="tiny">${m.category||m.type} · ${m.calories} cal · ${m.protein}g protein · ${m.fiber}g fiber</div>${m.addons?.length?`<div class="chip-row">${m.addons.map(x=>`<span class="meal-chip">+ ${x.name}</span>`).join("")}</div>`:""}</div><div class="meal-actions"><button class="secondary-button" data-edit-logged-meal="${i}">Edit</button><button class="secondary-button" data-remove-meal="${i}">Remove</button></div></div>`).join("") : `<div class="empty">No meals logged yet. Your first meal will show up here.</div>`}</div>
     <div class="card"><p class="eyebrow">PHOTO FOOD LOG</p><h3>Take a quick meal photo</h3><div class="spacer"></div><input type="file" accept="image/*" capture="environment" data-photo="meal-${todayKey()}"><p class="tiny">On mobile, this can open your camera. Photos stay on this device.</p></div>`}
   `;
+}
+function savedMealsPanel() {
+  const meals=sortedSavedMeals();
+  return `<div class="card saved-meals-card"><div class="row"><div><p class="eyebrow">MY SAVED MEALS</p><h3>Tap a meal, then log as-is or customize today.</h3></div><button class="secondary-button" data-action="new-saved-meal">+ Meal</button></div><div class="saved-meal-list">${meals.map(meal=>`<button class="saved-meal-card" data-saved-meal="${meal.id}"><span class="library-star">${meal.favorite?"★":"☆"}</span><strong>${meal.name}</strong><small>${meal.category} · used ${num(meal.useCount)}x</small><div class="chip-row"><span class="meal-chip">${num(meal.calories)} cal</span><span class="meal-chip">${num(meal.protein)}g P</span><span class="meal-chip">${num(meal.fiber)}g fiber</span></div>${meal.tags?.length?`<div class="chip-row">${meal.tags.slice(0,4).map(tag=>`<span class="tag-chip">${tag}</span>`).join("")}</div>`:""}</button>`).join("")}</div></div>`;
+}
+function macroChips(meal) { return `<div class="chip-row"><span class="meal-chip">${num(meal.calories)} cal</span><span class="meal-chip">${num(meal.protein)}g protein</span><span class="meal-chip">${num(meal.fiber)}g fiber</span><span class="meal-chip">${num(meal.carbs)}g carbs</span><span class="meal-chip">${num(meal.fat)}g fat</span></div>`; }
+function mealChoiceModal(id) {
+  const meal=findSavedMeal(id); if(!meal) return toast("Saved meal not found.");
+  modal(`<div class="modal-body"><p class="eyebrow">SAVED MEAL</p><h2>${meal.name}</h2>${macroChips(meal)}<p class="muted">${meal.notes||"No notes yet."}</p>${meal.ingredients?.length?`<div class="chip-row">${meal.ingredients.map(x=>`<span class="tag-chip">${x}</span>`).join("")}</div>`:""}<div class="stack gap" style="margin-top:14px"><button class="button" data-log-as-is="${meal.id}">Log as-is</button><button class="secondary-button" data-customize-meal="${meal.id}">Customize today</button><button class="secondary-button" data-edit-template="${meal.id}">Edit template</button><button class="secondary-button" data-toggle-favorite="${meal.id}">${meal.favorite?"Unmark favorite":"Mark favorite"}</button><button class="danger-button" data-delete-template="${meal.id}">Delete saved meal</button><button class="secondary-button" data-close>Close</button></div></div>`);
+}
+function mealFormFields(meal, prefix="") {
+  return `${field("Meal name",`${prefix}name`,meal.name||"","text")}${selectField("Category",`${prefix}category`,meal.category||"breakfast",["breakfast","lunch","dinner","snack","drink"])}${field("Calories",`${prefix}calories`,meal.calories)}${field("Protein g",`${prefix}protein`,meal.protein)}${field("Fiber g",`${prefix}fiber`,meal.fiber)}${field("Carbs g",`${prefix}carbs`,meal.carbs)}${field("Fat g",`${prefix}fat`,meal.fat)}${field("Sodium optional",`${prefix}sodium`,meal.sodium||"")}<label class="full">Ingredients, one per line<textarea data-field="${prefix}ingredients">${(meal.ingredients||[]).join("\n")}</textarea></label><label class="full">Tags, comma separated<textarea data-field="${prefix}tags">${(meal.tags||[]).join(", ")}</textarea></label><label class="full">Notes<textarea data-field="${prefix}notes">${meal.notes||""}</textarea></label><label class="full">Photo optional<input type="file" accept="image/*" capture="environment" data-photo="saved-meal-${meal.id||"new"}"></label>`;
+}
+function templateFormModal(id=null) {
+  const meal=id?findSavedMeal(id):{id:mealId(),name:"",category:"breakfast",calories:"",protein:"",fiber:"",carbs:"",fat:"",sodium:"",ingredients:[],tags:[],notes:"",favorite:false,addons:[]};
+  if(!meal) return toast("Saved meal not found.");
+  modal(`<div class="modal-body"><p class="eyebrow">${id?"EDIT TEMPLATE":"NEW SAVED MEAL"}</p><h2>${id?"Update saved meal":"Create meal template"}</h2><form id="savedMealForm" data-template-id="${meal.id}" data-existing="${id?"yes":"no"}"><div class="form-grid">${mealFormFields(meal)}</div><div class="modal-actions"><button type="button" class="secondary-button" data-close>Cancel</button><button class="button">Save template</button></div></form></div>`);
+}
+function customizeMealModal(id, mode="today", logIndex="") {
+  const source=mode==="logged" ? dayLog().meals[num(logIndex)] : findSavedMeal(id);
+  if(!source) return toast("Meal not found.");
+  const meal=mode==="logged" ? {...source, id:source.templateId||""} : loggedMealFromTemplate(source);
+  const addons=mode==="logged" ? [] : (source.addons||[]);
+  modal(`<div class="modal-body"><p class="eyebrow">${mode==="logged"?"EDIT TODAY'S MEAL":"LOG WITH EDITS"}</p><h2>${meal.name}</h2><form id="mealBuilderForm" data-template-id="${id||meal.templateId||""}" data-mode="${mode}" data-log-index="${logIndex}"><div class="form-grid">${mealFormFields(meal,"meal.")}${field("Portion multiplier","meal.portion",1,"number",'step="0.1"')}</div>${addons.length?`<div class="card compact-card"><p class="eyebrow">OPTIONAL ADD-ONS</p><div class="addon-grid">${addons.map((a,i)=>`<label class="addon-chip"><input type="checkbox" data-addon-choice="${i}" ${meal.addons?.some(x=>x.name===a.name)?"checked":""}><span>${a.name}<small>${a.calories} cal · ${a.protein||0}g P</small></span></label>`).join("")}</div><p class="tiny">Add-on macros are included when you save today’s version.</p></div>`:""}<div id="mealBuilderEstimate" class="feedback">Estimated: ${meal.calories} cal · ${meal.protein}g protein · ${meal.fiber}g fiber</div><div class="modal-actions"><button type="button" class="secondary-button" data-close>Cancel</button>${mode==="logged"?`<button class="button" name="saveMode" value="today">Save today</button>`:`<button class="secondary-button" name="saveMode" value="new">Save as new custom meal</button><button class="secondary-button" name="saveMode" value="update">Update original</button><button class="button" name="saveMode" value="today">Save only for today</button>`}</div></form></div>`);
+  updateMealBuilderEstimate();
+}
+function collectMealForm(form, prefix="") {
+  const data={}; form.querySelectorAll("[data-field]").forEach(x=>{ if(!prefix || x.dataset.field.startsWith(prefix)) data[x.dataset.field.replace(prefix,"")]=coerce(x); });
+  return { id:form.dataset.templateId||mealId(), name:data.name||"Saved meal", category:data.category||"meal", calories:num(data.calories), protein:num(data.protein), fiber:num(data.fiber), carbs:num(data.carbs), fat:num(data.fat), sodium:data.sodium||"", ingredients:String(data.ingredients||"").split("\n").map(x=>x.trim()).filter(Boolean), notes:data.notes||"", tags:String(data.tags||"").split(",").map(x=>x.trim()).filter(Boolean), favorite:false, addons:[] };
+}
+function applyAddons(base, form, templateId) {
+  const source=findSavedMeal(templateId), addons=source?.addons||[];
+  const selected=[...form.querySelectorAll("[data-addon-choice]:checked")].map(x=>addons[num(x.dataset.addonChoice)]).filter(Boolean);
+  const portion=num(base.portion,1)||1;
+  const meal={...base, calories:round(num(base.calories)*portion), protein:round(num(base.protein)*portion), fiber:round(num(base.fiber)*portion), carbs:round(num(base.carbs)*portion), fat:round(num(base.fat)*portion), addons:selected, availableAddons:addons, ingredients:[...(base.ingredients||[]),...selected.map(x=>x.name)]};
+  selected.forEach(addon=>["calories","protein","fiber","carbs","fat"].forEach(key=>meal[key]=round(num(meal[key])+num(addon[key]))));
+  delete meal.portion;
+  return meal;
+}
+function updateMealBuilderEstimate() {
+  const form=document.querySelector("#mealBuilderForm"), output=document.querySelector("#mealBuilderEstimate");
+  if(!form||!output) return;
+  const meal=applyAddons(collectMealForm(form,"meal."), form, form.dataset.templateId);
+  output.textContent=`Estimated: ${num(meal.calories)} cal · ${num(meal.protein)}g protein · ${num(meal.fiber)}g fiber`;
 }
 function gutPanel(log) {
   return `<div class="card"><div class="row"><div><p class="eyebrow">GUT HEALTH</p><h2>${gutScore(log)}/100</h2></div><div class="ring soft-ring" style="--value:${gutScore(log)}" data-label="${gutScore(log)}"></div></div></div><div class="card"><div class="form-grid">${field("Water oz","water",log.water)}${field("Fiber g","fiber",log.fiber)}${yesNoField("Vegetables","vegetables",log.vegetables)}${yesNoField("Kefir","kefir",log.kefir)}${yesNoField("Probiotic","probiotic",log.probiotic)}${selectField("Poop today?","poop",log.poop||"no",[["no","No"],["yes","Yes"]])}${field("Bloating 1-10","bloating",log.bloating||5)}${field("Constipation 1-10","constipation",log.constipation||5)}${noteField("Gut notes","gutNotes",log.gutNotes)}</div></div>${feedbackHTML(log)}`;
@@ -358,10 +457,7 @@ function wholeFoodsPanel() {
   return `<div class="card hero-card"><p class="eyebrow" style="color:#f7d9d7">WHOLE FOODS LIBRARY</p><h2>Busy-day favorites</h2><p class="muted">Save repeatable meals so busy days need less thought.</p></div><div class="card"><div class="row"><div><p class="eyebrow">SAVED MEALS</p><h3>Tap once to log</h3></div><button class="secondary-button" data-action="wholefoods-meal">+ Save meal</button></div><div class="library-grid">${meals.length?meals.map((m,i)=>`<button class="library-card" data-wholefood-meal="${i}"><span class="library-star">${m.favorite?"★":"☆"}</span><strong>${m.name}</strong><small>${m.calories} cal · ${m.protein}g protein · ${m.fiber}g fiber</small><span>${m.price?`$${m.price} · `:""}${m.rating||"—"}/5</span></button>`).join(""):`<div class="empty">No Whole Foods meals saved yet. Add your first reliable meal prep.</div>`}</div></div>`;
 }
 function addMeal(meal) {
-  const log = dayLog(); log.meals ||= [];
-  log.meals.push({ name:meal[0], type:meal[1], calories:meal[2], protein:meal[3], fiber:meal[4], carbs:meal[5], fat:meal[6], notes:"", rating:5 });
-  ["calories","protein","fiber","carbs","fat"].forEach((key, index) => log[key] = num(log[key]) + num(meal[index + 2]));
-  saveState(); toast(`${meal[0]} added`); render();
+  addMealObject({ logId:mealId(), name:meal[0], type:meal[1], category:String(meal[1]||"meal").toLowerCase(), calories:meal[2], protein:meal[3], fiber:meal[4], carbs:meal[5], fat:meal[6], notes:"", rating:5, ingredients:[], tags:[], addons:[] }, {touch:false});
 }
 
 function renderGut() {
@@ -581,14 +677,22 @@ function coerce(input) {
 }
 
 document.addEventListener("click", e => {
-  const nav=e.target.closest("[data-nav]"), goButton=e.target.closest("[data-go]"), quickMeal=e.target.closest("[data-quick-meal]"), libraryMeal=e.target.closest("[data-wholefood-meal]"), removeMeal=e.target.closest("[data-remove-meal]"), checkin=e.target.closest("[data-checkin]"), photoCompare=e.target.closest("[data-photo-compare]"), microphone=e.target.closest("[data-mic]"), action=e.target.closest("[data-action]"), tab=e.target.closest("[data-nutrition-tab]"), grocery=e.target.closest("[data-grocery]"), workout=e.target.closest("[data-workout-day]"), calendar=e.target.closest("[data-calendar-day]"), removeEvent=e.target.closest("[data-remove-event]");
+  const nav=e.target.closest("[data-nav]"), goButton=e.target.closest("[data-go]"), quickMeal=e.target.closest("[data-quick-meal]"), savedMeal=e.target.closest("[data-saved-meal]"), logAsIs=e.target.closest("[data-log-as-is]"), customizeMeal=e.target.closest("[data-customize-meal]"), editTemplate=e.target.closest("[data-edit-template]"), toggleFavorite=e.target.closest("[data-toggle-favorite]"), deleteTemplate=e.target.closest("[data-delete-template]"), confirmDeleteTemplate=e.target.closest("[data-confirm-delete-template]"), editLoggedMeal=e.target.closest("[data-edit-logged-meal]"), libraryMeal=e.target.closest("[data-wholefood-meal]"), removeMeal=e.target.closest("[data-remove-meal]"), checkin=e.target.closest("[data-checkin]"), photoCompare=e.target.closest("[data-photo-compare]"), microphone=e.target.closest("[data-mic]"), action=e.target.closest("[data-action]"), tab=e.target.closest("[data-nutrition-tab]"), grocery=e.target.closest("[data-grocery]"), workout=e.target.closest("[data-workout-day]"), calendar=e.target.closest("[data-calendar-day]"), removeEvent=e.target.closest("[data-remove-event]");
   if(nav) go(nav.dataset.nav); if(goButton) go(goButton.dataset.go);
   if(e.target.matches("[data-close]")) document.querySelector("#modal").close();
   if(e.target.matches("[data-habit]")) { dayLog().habits[e.target.dataset.habit]=e.target.checked; saveState(); render(); }
   if(e.target.matches("[data-exercise]")) { dayLog().exercises[e.target.dataset.exercise]=e.target.checked; saveState(); render(); }
   if(quickMeal) addMeal(QUICK_MEALS[num(quickMeal.dataset.quickMeal)]);
+  if(savedMeal) mealChoiceModal(savedMeal.dataset.savedMeal);
+  if(logAsIs) { const m=findSavedMeal(logAsIs.dataset.logAsIs); if(m){ addMealObject(loggedMealFromTemplate(m)); document.querySelector("#modal").close(); } }
+  if(customizeMeal) customizeMealModal(customizeMeal.dataset.customizeMeal);
+  if(editTemplate) templateFormModal(editTemplate.dataset.editTemplate);
+  if(toggleFavorite) { const m=findSavedMeal(toggleFavorite.dataset.toggleFavorite); if(m){ m.favorite=!m.favorite; saveState(); mealChoiceModal(m.id); renderNutrition(); } }
+  if(deleteTemplate) { const m=findSavedMeal(deleteTemplate.dataset.deleteTemplate); if(m) modal(`<div class="modal-body"><p class="eyebrow">DELETE SAVED MEAL</p><h2>${m.name}</h2><p>Delete this saved meal? This will not delete meals already logged in your history.</p><div class="modal-actions"><button class="secondary-button" data-close>Cancel</button><button class="danger-button" data-confirm-delete-template="${m.id}">Delete</button></div></div>`); }
+  if(confirmDeleteTemplate) { state.savedMeals=state.savedMeals.filter(x=>x.id!==confirmDeleteTemplate.dataset.confirmDeleteTemplate); saveState(); document.querySelector("#modal").close(); toast("Saved meal deleted. History is unchanged."); render(); }
+  if(editLoggedMeal) customizeMealModal("", "logged", editLoggedMeal.dataset.editLoggedMeal);
   if(libraryMeal) { const m=state.wholeFoodsMeals[num(libraryMeal.dataset.wholefoodMeal)]; addMeal([m.name,"Meal prep",m.calories,m.protein,m.fiber,m.carbs,m.fat]); }
-  if(removeMeal) { const log=dayLog(), meal=log.meals.splice(num(removeMeal.dataset.removeMeal),1)[0]; ["calories","protein","fiber","carbs","fat"].forEach((key,index)=>log[key]=Math.max(0,num(log[key])-num(meal[key]))); saveState(); render(); }
+  if(removeMeal) { const log=dayLog(); log.meals.splice(num(removeMeal.dataset.removeMeal),1); recalcMealTotals(log); saveState(); render(); }
   if(checkin) checkinModal(num(checkin.dataset.checkin));
   if(photoCompare) showPhotoComparison(num(photoCompare.dataset.photoCompare));
   if(microphone) startDictation(microphone.dataset.mic);
@@ -600,7 +704,9 @@ document.addEventListener("click", e => {
   if(removeEvent) { state.extraEvents.splice(num(removeEvent.dataset.removeEvent),1); saveState(); renderSettings(); }
 });
 document.addEventListener("change", e => {
+  if(e.target.closest("#mealBuilderForm")) updateMealBuilderEstimate();
   if(e.target.matches("[data-field]")) {
+    if(e.target.closest("#savedMealForm,#mealBuilderForm,#customMealForm,#wholeFoodsForm,#randomWeightForm,#eventForm,#groceryForm,#exerciseForm,#checkinForm")) return;
     const key=e.target.dataset.field, value=coerce(e.target);
     if(key.startsWith("settings.")) { setDeep(state,key,value); state.settings.height=num(state.settings.heightFeet)*12+num(state.settings.heightInches); }
     else if(key.startsWith("baseline.")) setDeep(state,key,value);
@@ -609,6 +715,7 @@ document.addEventListener("change", e => {
   }
   if(e.target.matches("[data-photo]") && e.target.files[0]) storePhoto(e.target.dataset.photo,e.target.files[0]);
 });
+document.addEventListener("input", e => { if(e.target.closest("#mealBuilderForm")) updateMealBuilderEstimate(); });
 document.addEventListener("submit", e => {
   if(e.target.id==="checkinForm") {
     e.preventDefault(); const form=e.target, day=num(form.dataset.day), data={};
@@ -625,7 +732,7 @@ function handleAction(action) {
   if(action==="open-gut-tab") { nutritionTab="gut"; go("nutrition"); }
   if(action==="reset") modal(`<div class="modal-body"><p class="eyebrow">EMERGENCY RESET</p><h2>Okay. The day is not ruined.</h2><p>Complete the reset three:</p><div class="card"><strong>1. Drink 24 oz water</strong><br><strong>2. Eat protein</strong><br><strong>3. Walk 15 minutes</strong></div><div class="modal-actions"><button class="secondary-button" data-close>Close</button><button class="button" data-action="complete-reset">Mark reset complete</button></div></div>`);
   if(action==="complete-reset") { dayLog().reset=true; saveState(); document.querySelector("#modal").close(); toast("Reset complete. That counts."); render(); }
-  if(action==="custom-meal") modal(`<div class="modal-body"><p class="eyebrow">CUSTOM MEAL</p><h2>Add a meal</h2><form id="customMealForm"><div class="form-grid">${field("Meal name","name","","text")}${field("Meal type","type","Meal","text")}${field("Calories","calories","")}${field("Protein g","protein","")}${field("Fiber g","fiber","")}${field("Carbs g","carbs","")}${field("Fat g","fat","")}${noteField("Meal notes","mealNotes","")}</div><div class="modal-actions"><button type="button" class="secondary-button" data-close>Cancel</button><button class="button">Add meal</button></div></form></div>`);
+  if(action==="custom-meal" || action==="new-saved-meal") templateFormModal();
   if(action==="random-weight") modal(`<div class="modal-body"><p class="eyebrow">PRIVATE RANDOM WEIGH-IN</p><h2>This is not an official check-in day.</h2><p>Daily scale changes can be water, sodium, constipation, sleep, or hormones. Do you still want to log this as a private random weigh-in?</p><form id="randomWeightForm"><div class="spacer"></div>${field("Private weight","privateWeight","","number",'step="0.1"')}<div class="modal-actions"><button type="button" class="secondary-button" data-close>Cancel</button><button class="button">Log privately</button></div></form></div>`);
   if(action==="copy-summary") navigator.clipboard.writeText(summary()).then(()=>toast("Summary copied for ChatGPT"));
   if(action==="copy-daily-summary") navigator.clipboard.writeText(dailySummary()).then(()=>toast("Daily summary copied"));
@@ -645,6 +752,8 @@ function handleAction(action) {
 }
 document.addEventListener("submit",e=>{
   if(e.target.id==="customMealForm"){e.preventDefault();const d={};e.target.querySelectorAll("[data-field]").forEach(x=>d[x.dataset.field]=coerce(x));addMeal([d.name||"Custom meal",d.type||"Meal",num(d.calories),num(d.protein),num(d.fiber),num(d.carbs),num(d.fat)]);document.querySelector("#modal").close();}
+  if(e.target.id==="savedMealForm"){e.preventDefault();const existing=e.target.dataset.existing==="yes", id=e.target.dataset.templateId, prior=findSavedMeal(id), meal=collectMealForm(e.target); meal.id=id; meal.favorite=prior?Boolean(prior.favorite):Boolean(meal.tags.includes("favorite")); meal.addons=prior?.addons||[]; meal.useCount=num(prior?.useCount); meal.lastUsed=prior?.lastUsed||""; meal.photoKey=`saved-meal-${id}`; if(existing){ const index=state.savedMeals.findIndex(x=>x.id===id); state.savedMeals[index]=meal; } else state.savedMeals.push(meal); saveState(); document.querySelector("#modal").close(); toast("Saved meal template updated"); render(); }
+  if(e.target.id==="mealBuilderForm"){e.preventDefault();const clicked=e.submitter?.value||"today", mode=e.target.dataset.mode, templateId=e.target.dataset.templateId, base=collectMealForm(e.target,"meal."), meal=applyAddons({...base, templateId}, e.target, templateId); if(mode==="logged"){ const log=dayLog(), idx=num(e.target.dataset.logIndex); meal.logId=log.meals[idx]?.logId||mealId(); meal.templateId=log.meals[idx]?.templateId||templateId; log.meals[idx]=meal; recalcMealTotals(log); saveState(); document.querySelector("#modal").close(); toast("Today's meal updated"); render(); return; } if(clicked==="update"){ const original=findSavedMeal(templateId); if(original){ Object.assign(original, {...meal, id:templateId, favorite:original.favorite, addons:original.addons||[], useCount:num(original.useCount), lastUsed:original.lastUsed||""}); saveState(); } } if(clicked==="new"){ const newTemplate={...meal, id:mealId(), favorite:false, useCount:0, lastUsed:"", addons:[], tags:[...(meal.tags||[]),"custom"]}; state.savedMeals.push(newTemplate); meal.templateId=newTemplate.id; } addMealObject({...meal, logId:mealId()}); document.querySelector("#modal").close(); }
   if(e.target.id==="randomWeightForm"){e.preventDefault();state.randomWeights.push({date:todayKey(),weight:num(e.target.querySelector("[data-field=privateWeight]").value)});saveState();document.querySelector("#modal").close();toast("Stored privately");render();}
   if(e.target.id==="eventForm"){e.preventDefault();const inputs=e.target.querySelectorAll("[data-field]");const data={};inputs.forEach(x=>data[x.dataset.field]=coerce(x));if(!data.eventDate)return toast("Add a date for this milestone.");state.extraEvents.push({name:data.eventName||"Extra event",date:data.eventDate,notes:data.eventNotes});saveState();document.querySelector("#modal").close();toast("Event added");renderSettings();}
   if(e.target.id==="groceryForm"){e.preventDefault();const name=e.target.querySelector("[data-field=groceryName]").value.trim();if(name)state.groceries.push({name,done:false});saveState();document.querySelector("#modal").close();renderNutrition();}

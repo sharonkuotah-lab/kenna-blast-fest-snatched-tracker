@@ -40,6 +40,16 @@ Phase 2.1 makes the app calmer and more personal for daily use:
 - Progressive-overload cues showing the previous logged weight beside today's exercise entry
 - Reusable Whole Foods library with favorites, price, rating, macros, notes, and one-tap logging
 
+## Custom Meal Library
+
+- **My Saved Meals** now appears at the top of Nutrition + Gut for fast repeat logging.
+- Saved meal templates are separate from daily logged meals, so editing or deleting a template does not change meal history.
+- Tap a saved meal to choose **Log as-is**, **Customize today**, **Edit template**, favorite/unfavorite, or delete.
+- **Log with edits** opens a meal builder for today only, with optional add-ons, portion adjustment, notes, and photo input.
+- Edited meals can be saved only for today, saved as a new custom meal, or used to update the original template.
+- Logged meals can be edited for that specific day without changing the saved template.
+- Default templates include eggs and egg whites, protein shakes, kefir smoothies, Whole Foods meals, tortilla chips, coffee, and green tea with ginger and honey.
+
 ## Features
 
 - Dashboard with event countdowns, challenge day, streak, next check-in, scores, progress bars, calorie dashboard, and daily coach feedback
