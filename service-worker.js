@@ -1,5 +1,5 @@
-const CACHE = "snatched-45-v6";
-const ASSETS = ["./", "./index.html", "./styles.css?v=6", "./app.js?v=6", "./manifest.json", "./icon.svg"];
+const CACHE = "snatched-45-v8";
+const ASSETS = ["./", "./index.html", "./styles.css?v=8", "./app.js?v=8", "./manifest.json", "./icon.svg"];
 
 self.addEventListener("install", event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(ASSETS)));

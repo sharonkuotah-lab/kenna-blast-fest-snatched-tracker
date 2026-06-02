@@ -41,16 +41,29 @@ const QUICK_MEALS = [
   ["Green Smoothie", "Snack", 230, 18, 8, 33, 5]
 ];
 const DEFAULT_SETTINGS = {
-  startDate: "2026-06-04", endDate: "2026-07-18", miniEventDate: "2026-06-19",
-  height: 68, age: 30, sex: "female", startWeight: 180, goalWeight: 170,
+  name: "Kenna / Sharon", startDate: "2026-06-02", endDate: "2026-07-18", eventName: "Blast Fest",
+  miniEventDate: "2026-06-19", miniEventName: "Seattle Concert", heightFeet: 5, heightInches: 8, height: 68,
+  age: 25, sex: "female", startWeight: 180, goalWeight: 170,
   activity: "moderate", intensity: "aggressive", waterGoal: 100, proteinGoal: 140,
   fiberGoal: 25, stepGoal: 10000, calorieTarget: 1750, deficitTarget: 650, units: "US"
 };
-const pageTitles = { dashboard:"Dashboard", today:"Today Only", nutrition:"Nutrition", gut:"Gut Health", workouts:"Workouts", progress:"Progress", checkins:"Check-Ins", coach:"AI Coach", settings:"Settings" };
+const GROCERY_DEFAULTS = ["Eggs","Egg whites","Chicken","Salmon","Turkey","Rice","Potatoes","Broccoli","Green beans","Spinach","Kale","Pineapple","Chia seeds","Flax seeds","Kefir","Greek yogurt","Protein powder","Tea","Water / electrolytes"];
+const ROUTINES = {
+  0:["Reset Day",["Grocery planning","Meal prep","Long walk or gym","Plan the week"],["Morning water","Plan groceries","Meal prep block","Long walk","Night check-in"]],
+  1:["Off Day",["Workout","Flexible errands or content","Hit your steps"],["Morning water","Workout","Steps finish","Night check-in"]],
+  2:["Prep Day",["Workout","Reset meals and water","Prep outfits and gym plan"],["Morning water","Workout","School-week prep","Night check-in"]],
+  3:["Class Day",["Breakfast before class","Pack meal prep and water","Lunch around 12-1","Gym around 4 if possible","Finish steps"],["6 AM breakfast","Pack meal prep","12 PM lunch","3:30 PM gym","Evening check-in"]],
+  4:["Clinical Day",["Gym before clinical","Meal prep before shift","Protein before shift","Hydration during clinical"],["Late-morning hydration","Eat before clinical","Pack meal prep","Protein before shift","Post-clinical recovery note"]],
+  5:["Clinical Recovery Day",["Steps and walking","Food and water","Sleep recovery","No pressure for gym"],["Late-morning hydration","Eat before clinical","Pack meal prep","Protein before shift","Post-clinical recovery note"]],
+  6:["Off Day",["Main workout or long walk","Meal prep or grocery planning","Keep structure simple"],["Morning water","Workout or long walk","Steps","Night check-in"]]
+};
+const pageTitles = { dashboard:"Dashboard", today:"Today", nutrition:"Nutrition + Gut", gut:"Gut Health", workouts:"Workouts", progress:"Progress", checkins:"Check-Ins", coach:"AI Coach", settings:"Settings" };
 
 let state = loadState();
 let activePage = "dashboard";
 let quickMode = false;
+let nutritionTab = "meals";
+let workoutDay = null;
 
 function localISO(date = new Date()) {
   const d = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
@@ -78,10 +91,16 @@ function formatDate(value) { return parseDate(value).toLocaleDateString(undefine
 function saveState() { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
 
 function createDefaultState() {
-  return { settings: { ...DEFAULT_SETTINGS }, daily: {}, checkins: {}, randomWeights: [], favorites: [], reminders: true, samplesLoaded: false };
+  return { settings: { ...DEFAULT_SETTINGS }, daily: {}, checkins: {}, randomWeights: [], favorites: [], groceries: GROCERY_DEFAULTS.map(name=>({name,done:false})), extraEvents: [], coachNotes: [], reminders: true, samplesLoaded: false };
 }
 function loadState() {
-  try { return { ...createDefaultState(), ...JSON.parse(localStorage.getItem(STORAGE_KEY)) }; }
+  try {
+    const saved=JSON.parse(localStorage.getItem(STORAGE_KEY)), base=createDefaultState(), merged={...base,...saved,settings:{...base.settings,...(saved?.settings||{})}};
+    merged.settings.heightFeet=num(merged.settings.heightFeet,Math.floor(num(merged.settings.height,68)/12));
+    merged.settings.heightInches=num(merged.settings.heightInches,num(merged.settings.height,68)%12);
+    merged.settings.height=merged.settings.heightFeet*12+merged.settings.heightInches;
+    return merged;
+  }
   catch { return createDefaultState(); }
 }
 
@@ -104,6 +123,8 @@ function latestOfficialWeight() {
 function dailyEntries(limit = 45) {
   return Object.entries(state.daily).sort(([a], [b]) => a.localeCompare(b)).slice(-limit).map(([date, log]) => ({ date, ...log }));
 }
+function hasLogData(log) { return ["calories","protein","fiber","water","steps","sleep","notes","gutNotes"].some(key=>log[key]) || log.reset || log.workoutCompleted || Object.values(log.habits||{}).some(Boolean) || (log.meals||[]).length; }
+function trendEntries() { return dailyEntries().filter(hasLogData); }
 function score(log) {
   let total = 0;
   total += pct(log.water, state.settings.waterGoal) * .15;
@@ -146,11 +167,17 @@ function streak() {
   return count;
 }
 function todayFocus(log) {
+  const routine=routineToday();
+  if (routine[0]==="Class Day") return "Pack meal prep, fill your water bottle, eat lunch, then gym or steps after class.";
+  if (routine[0].includes("Clinical")) return "Eat and hydrate before clinical. Pack protein and protect your recovery.";
+  if (routine[0]==="Reset Day") return "Reset gently: groceries, meal prep, a long walk, and your plan for the week.";
   if (pct(log.water, state.settings.waterGoal) < 50) return "Start with water. Hydration makes every other choice easier.";
   if (pct(log.protein, state.settings.proteinGoal) < 55) return "Build the next meal around protein before snacks.";
   if (pct(log.steps, state.settings.stepGoal) < 60) return "A short walk is the fastest way to build momentum.";
   return "Keep it steady. Finish the basics and let consistency do the work.";
 }
+function routineToday(date=todayKey()) { return ROUTINES[parseDate(date).getDay()] || ROUTINES[1]; }
+function routineCard() { const [type,priorities,reminders]=routineToday(); return `<div class="card"><div class="row"><div><p class="eyebrow">TODAY'S SCHEDULE TYPE</p><h3>${type}</h3></div><span class="pill">${formatDate(todayKey())}</span></div><div class="chip-row">${priorities.map(x=>`<span class="meal-chip">${x}</span>`).join("")}</div><details><summary>Routine reminders</summary><div class="detail-body">${reminders.map(x=>`<p class="tiny">○ ${x}</p>`).join("")}</div></details></div>`; }
 function phase() {
   const current = todayKey();
   if (current >= "2026-07-11" && current <= "2026-07-18") return "Final Week";
@@ -161,13 +188,15 @@ function phase() {
 function progressRow(label, value, goal, unit = "") {
   return `<div><div class="row"><strong>${label}</strong><span class="tiny">${num(value)} / ${goal}${unit}</span></div><div class="progress"><span style="width:${pct(value, goal)}%"></span></div></div>`;
 }
-function mic(fieldId) { return `<button type="button" class="mic-button" data-mic="${fieldId}" aria-label="Speak note">●</button>`; }
+function mic(fieldId) { return `<button type="button" class="mic-button" data-mic="${fieldId}" aria-label="Talk it out">🎤</button>`; }
 function field(label, key, value = "", type = "number", extra = "") {
   return `<label>${label}<input type="${type}" data-field="${key}" value="${value ?? ""}" ${extra}></label>`;
 }
 function selectField(label, key, value, choices) {
-  return `<label>${label}<select data-field="${key}">${choices.map(x => `<option value="${x}" ${value === x ? "selected" : ""}>${x}</option>`).join("")}</select></label>`;
+  return `<label>${label}<select data-field="${key}">${choices.map(x => { const option=Array.isArray(x)?x:[x,x]; return `<option value="${option[0]}" ${String(value) === String(option[0]) ? "selected" : ""}>${option[1]}</option>`; }).join("")}</select></label>`;
 }
+function yesNoField(label,key,value) { return selectField(label,key,String(Boolean(value)),[["false","No"],["true","Yes"]]); }
+function completeField(label,key,value) { return selectField(label,key,String(Boolean(value)),[["false","Not complete"],["true","Complete"]]); }
 function noteField(label, key, value = "") {
   const id = `note-${key}`;
   return `<label class="full">${label}<div class="note-wrap"><textarea id="${id}" data-field="${key}">${value || ""}</textarea>${mic(id)}</div></label>`;
@@ -185,38 +214,28 @@ function listCard(title, items) {
 function renderDashboard() {
   const log = dayLog(), snatched = score(log), gut = gutScore(log), check = nextCheckin();
   const workout = WORKOUTS[workoutIndex()][0];
+  const events=[{name:state.settings.miniEventName,date:state.settings.miniEventDate},{name:state.settings.eventName,date:state.settings.endDate},...(state.extraEvents||[])].filter(x=>x.date>=todayKey()).sort((a,b)=>a.date.localeCompare(b.date));
+  const nextEvent=events[0]||{name:state.settings.eventName,date:state.settings.endDate};
   document.querySelector("#dashboardContent").innerHTML = `
     ${state.samplesLoaded ? `<div class="card protocol"><div class="row"><div><p class="eyebrow">PREVIEW DATA</p><p class="tiny">Sample logs are loaded so you can explore the app. Clear them in Settings when you are ready to begin.</p></div><button class="secondary-button" data-go="settings">Settings</button></div></div>` : ""}
     <div class="card hero-card">
       <div class="row"><div><p class="eyebrow" style="color:#f7d9d7">${phase()} · DAY ${getDayNumber()} OF 45</p><h2 class="hero-title">Blast Fest<br>Snatched</h2><p class="muted hero-subtitle">Your soft-glam accountability era. Basics first, then enjoy your life.</p></div><div><div class="ring" style="--value:${snatched}" data-label="${snatched}"></div><p class="tiny" style="text-align:center;margin-top:7px">SNATCHED SCORE</p></div></div>
     </div>
-    <div class="card mission-card"><p class="eyebrow">TODAY'S MISSION</p><h3 style="margin-top:5px">${todayFocus(log)}</h3><div class="spacer"></div><button class="button" data-go="today">Start today's check-in</button></div>
+    <div class="card mission-card"><p class="eyebrow">TODAY'S MISSION</p><h3 style="margin-top:5px">${todayFocus(log)}</h3><div class="action-row"><button class="button" data-action="quick-log">Quick log</button><button class="secondary-button" data-action="full-checkin">Full check-in</button></div></div>
     ${protocolCard()}
-    <div class="event-grid">
-      <div class="event-card"><p class="eyebrow">SEATTLE CONCERT</p><strong>${daysRemaining(state.settings.miniEventDate)} days</strong><span class="tiny">${formatDate(state.settings.miniEventDate)} · mini glow-up</span></div>
-      <div class="event-card"><p class="eyebrow">BLAST FEST</p><strong>${daysRemaining(state.settings.endDate)} days</strong><span class="tiny">${formatDate(state.settings.endDate)} · main event</span></div>
-    </div>
-    <div class="grid-2">
-      <div class="card countdown-card"><p class="eyebrow">NEXT CHECK-IN</p><h2>Day ${check}</h2><p class="muted">${formatDate(challengeDate(check))} · ${daysRemaining(challengeDate(check))} days</p></div>
-      <div class="card countdown-card"><p class="eyebrow">CURRENT STREAK</p><h2>${streak()} days</h2><p class="muted">${scoreLabel(snatched)}</p></div>
-    </div>
-    <div class="card stack">
-      <div class="row"><h3>Today's essentials</h3><button class="secondary-button" data-go="today">Log today</button></div>
+    <button class="card movement-card" data-go="workouts"><span><span class="eyebrow">TODAY'S MOVEMENT</span><strong>${workout}</strong><small>${log.workoutCompleted ? "Complete. Nice work." : "Tap to open today's exercises"}</small></span><span class="movement-arrow">→</span></button>
+    <div class="card stack"><div class="row"><div><p class="eyebrow">THE BASICS</p><h3>Keep the main thing simple</h3></div><span class="pill">${streak()} day streak</span></div>
       ${progressRow("Water", log.water, state.settings.waterGoal, " oz")}
       ${progressRow("Protein", log.protein, state.settings.proteinGoal, "g")}
-      ${progressRow("Fiber", log.fiber, state.settings.fiberGoal, "g")}
       ${progressRow("Steps", log.steps, state.settings.stepGoal)}
-      ${progressRow("Sleep", log.sleep, 7, " hrs")}
     </div>
-    <div class="metric-grid">
-      <div class="metric"><small>Calories eaten</small><strong>${num(log.calories)}</strong></div>
-      <div class="metric"><small>Estimated burn</small><strong>${burned(log)}</strong></div>
-      <div class="metric"><small>Daily deficit</small><strong>${deficit(log)}</strong></div>
-      <div class="metric"><small>Gut health</small><strong>${gut}/100</strong></div>
-    </div>
-    <div class="card"><div class="row"><div><p class="eyebrow">TODAY'S MOVEMENT</p><h3>${workout}</h3><p class="muted">${log.workoutCompleted ? "Workout complete. Nice work." : "One session. Then move on with your day."}</p></div><span class="pill">${log.workoutCompleted ? "Done" : "Open"}</span></div></div>
-    <div class="card"><div class="row"><div><p class="eyebrow">CALORIE DASHBOARD</p><h3>Smart, steady deficit</h3></div><button class="secondary-button" data-go="progress">View trends</button></div><div class="spacer"></div>${calorieSummary()}</div>
-    ${feedbackHTML(log)}
+    <div class="card"><div class="row"><div><p class="eyebrow">NEXT EVENT</p><h3>${nextEvent.name}</h3></div><span class="pill">${daysRemaining(nextEvent.date)} days</span></div><p class="muted">${formatDate(nextEvent.date)}${nextEvent.notes?` · ${nextEvent.notes}`:""}</p></div>
+    ${routineCard()}
+    <div class="coach-note"><p class="eyebrow">COACH NOTE</p><p>${feedback(log)[0]||"Do the basics. A steady day still counts."}</p></div>
+    <details class="card"><summary>Calories</summary><div class="detail-body"><div class="metric-grid"><div class="metric"><small>Eaten</small><strong>${num(log.calories)}</strong></div><div class="metric"><small>Est. burn</small><strong>${burned(log)}</strong></div><div class="metric"><small>Deficit</small><strong>${deficit(log)}</strong></div></div>${calorieSummary()}</div></details>
+    <details class="card"><summary>Gut health</summary><div class="detail-body"><p class="muted">Gut score ${gut}/100</p>${progressRow("Fiber", log.fiber, state.settings.fiberGoal, "g")}<div class="spacer"></div><button class="secondary-button" data-go="gut">Open gut log</button></div></details>
+    <details class="card"><summary>Trends + check-ins</summary><div class="detail-body"><p class="muted">Next official check-in: Day ${check} · ${formatDate(challengeDate(check))}</p><div class="action-row"><button class="secondary-button" data-go="progress">Progress</button><button class="secondary-button" data-go="checkins">Check-ins</button></div></div></details>
+    <details class="card"><summary>Events + reminders</summary><div class="detail-body">${events.map(x=>`<p class="tiny">○ ${formatDate(x.date)} · ${x.name}</p>`).join("")}<div class="spacer"></div><button class="secondary-button" data-action="notifications">Browser reminders</button></div></details>
     <div class="card"><div class="row"><div><p class="eyebrow">ADHD-FRIENDLY RESET</p><h3>Fell off today?</h3></div><button class="danger-button" data-action="reset">Emergency reset</button></div></div>
   `;
 }
@@ -231,19 +250,20 @@ function renderToday() {
   const habitHTML = HABITS.map(([key, label]) => `<label class="habit"><input type="checkbox" data-habit="${key}" ${log.habits[key] ? "checked" : ""}><span>${label}</span></label>`).join("");
   document.querySelector("#todayContent").innerHTML = `
     <div class="card"><div class="row"><div><p class="eyebrow">DAY ${getDayNumber()} MISSION</p><h3>${todayFocus(log)}</h3></div><div class="ring soft-ring" style="--value:${score(log)}" data-label="${score(log)}"></div></div></div>
+    ${routineCard()}
     <div class="card"><h3>Daily checklist</h3>${habitHTML}</div>
-    <div class="card ${quickMode ? "" : "hidden"}"><h3>Quick check-in</h3><p class="tiny">The basics only. You can add details later.</p><div class="spacer"></div><div class="form-grid">${field("Water oz","water",log.water)}${field("Protein g","protein",log.protein)}${field("Fiber g","fiber",log.fiber)}${field("Steps","steps",log.steps)}${field("Calories","calories",log.calories)}${field("Sleep hours","sleep",log.sleep)}</div></div>
-    <div class="card ${quickMode ? "hidden" : ""}"><h3>Daily check-in</h3><div class="spacer"></div><div class="form-grid">
+    <div class="card ${quickMode ? "" : "hidden"}"><p class="eyebrow">QUICK LOG</p><h3>30-second check-in</h3><p class="tiny">Log the basics and keep moving.</p><div class="spacer"></div><div class="form-grid">${field("Water oz","water",log.water)}${field("Protein g","protein",log.protein)}${field("Fiber g","fiber",log.fiber)}${field("Steps","steps",log.steps)}${field("Calories","calories",log.calories)}${completeField("Workout","workoutCompleted",log.workoutCompleted)}${selectField("Poop today?","poop",log.poop||"no",[["no","No"],["yes","Yes"]])}${field("Bloating 1-10","bloating",log.bloating||5)}${noteField("Quick note","notes",log.notes)}</div></div>
+    <div class="card ${quickMode ? "hidden" : ""}"><p class="eyebrow">FULL CHECK-IN</p><h3>Detailed end-of-day review</h3><p class="tiny">Use this when you want the full pattern.</p><div class="spacer"></div><div class="form-grid">
       ${field("Calories consumed","calories",log.calories)}${field("Protein g","protein",log.protein)}${field("Fiber g","fiber",log.fiber)}${field("Water oz","water",log.water)}
       ${field("Steps","steps",log.steps)}${field("Active calories","activeCalories",log.activeCalories)}${field("Exercise minutes","exerciseMinutes",log.exerciseMinutes)}${field("Distance miles","distance",log.distance,"number",'step="0.1"')}
-      ${field("Sleep hours","sleep",log.sleep,"number",'step="0.1"')}${selectField("Workout completed","workoutCompleted",String(Boolean(log.workoutCompleted)),["false","true"])}
-      ${selectField("Cardio completed","cardio",String(Boolean(log.cardio)),["false","true"])}${selectField("Meal prep eaten","mealPrep",String(Boolean(log.mealPrep)),["false","true"])}
-      ${selectField("Dinner completed","dinner",String(Boolean(log.dinner)),["false","true"])}${selectField("Alcohol","alcohol",String(Boolean(log.alcohol)),["false","true"])}
+      ${field("Sleep hours","sleep",log.sleep,"number",'step="0.1"')}${completeField("Workout","workoutCompleted",log.workoutCompleted)}
+      ${completeField("Cardio","cardio",log.cardio)}${yesNoField("Meal prep eaten","mealPrep",log.mealPrep)}
+      ${yesNoField("Dinner completed","dinner",log.dinner)}${yesNoField("Alcohol","alcohol",log.alcohol)}
       ${field("Bloating level 1-10","bloating",log.bloating || 5)}${field("Constipation level 1-10","constipation",log.constipation || 5)}
-      ${selectField("Did I poop today?","poop",log.poop || "no",["no","yes"])}${selectField("Bowel movement type","bowelType",log.bowelType || "none",["none","easy","normal","hard","diarrhea"])}
+      ${selectField("Did I poop today?","poop",log.poop || "no",[["no","No"],["yes","Yes"]])}${selectField("Bowel movement type","bowelType",log.bowelType || "none",[["none","None"],["easy","Easy"],["normal","Normal"],["hard","Hard"],["diarrhea","Diarrhea"]])}
       ${field("Energy 1-10","energy",log.energy || 5)}${field("Mood 1-10","mood",log.mood || 5)}${field("Cravings 1-10","cravings",log.cravings || 5)}${field("Stress 1-10","stress",log.stress || 5)}
       ${noteField("Daily notes","notes",log.notes)}
-    </div><p class="tiny">Version 1 uses manual Apple Health entry. Future iOS app version can connect directly to Apple Health.</p></div>
+    </div><div class="spacer"></div><button class="secondary-button" data-mic="note-notes">🎤 Talk check-in</button><p class="tiny">Speak naturally. Your transcript saves as a note. Version 1 uses manual Apple Health entry.</p></div>
     ${feedbackHTML(log)}
   `;
 }
@@ -273,11 +293,22 @@ function feedbackHTML(log) {
 function renderNutrition() {
   const log = dayLog(), meals = log.meals || [];
   document.querySelector("#nutritionContent").innerHTML = `
+    <div class="subnav">${[["meals","Meals"],["gut","Gut"],["grocery","Grocery"],["wholefoods","Whole Foods"]].map(([key,label])=>`<button class="${nutritionTab===key?"active":""}" data-nutrition-tab="${key}">${label}</button>`).join("")}</div>
+    ${nutritionTab==="gut" ? gutPanel(log) : nutritionTab==="grocery" ? groceryPanel() : nutritionTab==="wholefoods" ? wholeFoodsPanel() : `
     <div class="card hero-card"><p class="eyebrow" style="color:#f7d9d7">TODAY'S NOURISHMENT</p><h2>${num(log.calories)} calories</h2><p class="muted">Build the plate around protein. Keep the rest simple.</p><div class="spacer"></div>${progressRow("Protein",log.protein,state.settings.proteinGoal,"g")}</div>
     <div class="card"><div class="row"><div><p class="eyebrow">SAVED FAVORITES</p><h3>Whole Foods quick add</h3></div><button class="secondary-button" data-action="custom-meal">+ Custom</button></div><div class="spacer"></div><div class="quick-scroll">${QUICK_MEALS.map((m,i)=>`<button class="quick-add" data-quick-meal="${i}"><span class="meal-art">✦</span><strong>${m[0]}</strong><div class="chip-row"><span class="meal-chip">${m[2]} cal</span><span class="meal-chip">${m[3]}g P</span><span class="meal-chip">${m[4]}g fiber</span></div></button>`).join("")}</div></div>
-    <div class="card"><h3>Meals logged today</h3>${meals.length ? meals.map((m,i)=>`<div class="meal-item row"><div><strong>${m.name}</strong><div class="tiny">${m.type} · ${m.calories} cal · ${m.protein}g protein · ${m.fiber}g fiber</div></div><button class="secondary-button" data-remove-meal="${i}">Remove</button></div>`).join("") : `<div class="empty">No meals logged yet. One tap is enough.</div>`}</div>
-    <div class="card"><p class="eyebrow">MEAL PHOTO</p><h3>Optional visual food log</h3><div class="spacer"></div><input type="file" accept="image/*" data-photo="meal-${todayKey()}"><p class="tiny">Photos stay on this device when browser storage allows it.</p></div>
+    <div class="card"><h3>Meals logged today</h3>${meals.length ? meals.map((m,i)=>`<div class="meal-item row"><div><strong>${m.name}</strong><div class="tiny">${m.type} · ${m.calories} cal · ${m.protein}g protein · ${m.fiber}g fiber</div></div><button class="secondary-button" data-remove-meal="${i}">Remove</button></div>`).join("") : `<div class="empty">No meals logged yet. Your first meal will show up here.</div>`}</div>
+    <div class="card"><p class="eyebrow">PHOTO FOOD LOG</p><h3>Take a quick meal photo</h3><div class="spacer"></div><input type="file" accept="image/*" capture="environment" data-photo="meal-${todayKey()}"><p class="tiny">On mobile, this can open your camera. Photos stay on this device.</p></div>`}
   `;
+}
+function gutPanel(log) {
+  return `<div class="card"><div class="row"><div><p class="eyebrow">GUT HEALTH</p><h2>${gutScore(log)}/100</h2></div><div class="ring soft-ring" style="--value:${gutScore(log)}" data-label="${gutScore(log)}"></div></div></div><div class="card"><div class="form-grid">${field("Water oz","water",log.water)}${field("Fiber g","fiber",log.fiber)}${yesNoField("Vegetables","vegetables",log.vegetables)}${yesNoField("Kefir","kefir",log.kefir)}${yesNoField("Probiotic","probiotic",log.probiotic)}${selectField("Poop today?","poop",log.poop||"no",[["no","No"],["yes","Yes"]])}${field("Bloating 1-10","bloating",log.bloating||5)}${field("Constipation 1-10","constipation",log.constipation||5)}${noteField("Gut notes","gutNotes",log.gutNotes)}</div></div>${feedbackHTML(log)}`;
+}
+function groceryPanel() {
+  return `<div class="card"><p class="eyebrow">GROCERY BUILDER</p><h2>Keep the fridge easy</h2><p class="muted">Tap items as they make it into the cart.</p><div class="spacer"></div>${(state.groceries||[]).map((x,i)=>`<label class="habit"><input type="checkbox" data-grocery="${i}" ${x.done?"checked":""}><span>${x.name}</span></label>`).join("")}<div class="spacer"></div><button class="secondary-button" data-action="add-grocery">+ Add grocery item</button></div>`;
+}
+function wholeFoodsPanel() {
+  return `<div class="card hero-card"><p class="eyebrow" style="color:#f7d9d7">WHOLE FOODS LOG</p><h2>Meal prep library</h2><p class="muted">Save repeatable meals so busy days need less thought.</p></div><div class="card"><p class="muted">Log calories, protein, fiber, carbs, fat, optional sodium, a rating, and notes.</p><div class="spacer"></div><button class="button" data-action="wholefoods-meal">Log Whole Foods meal prep</button></div>`;
 }
 function addMeal(meal) {
   const log = dayLog(); log.meals ||= [];
@@ -287,31 +318,29 @@ function addMeal(meal) {
 }
 
 function renderGut() {
-  const log = dayLog(), scoreValue = gutScore(log);
-  document.querySelector("#gutContent").innerHTML = `
-    <div class="card"><div class="row"><div><p class="eyebrow">GUT HEALTH SCORE</p><h2>${scoreValue}/100</h2><p class="muted">Aim for steady inputs, not a perfect stomach every day.</p></div><div class="ring soft-ring" style="--value:${scoreValue}" data-label="${scoreValue}"></div></div></div>
-    <div class="card"><h3>Gut health check-in</h3><div class="spacer"></div><div class="form-grid">
-      ${field("Water oz","water",log.water)}${field("Fiber g","fiber",log.fiber)}${selectField("Vegetables eaten","vegetables",String(Boolean(log.vegetables)),["false","true"])}${selectField("Kefir","kefir",String(Boolean(log.kefir)),["false","true"])}
-      ${selectField("Probiotic","probiotic",String(Boolean(log.probiotic)),["false","true"])}${selectField("Bowel movement","poop",log.poop || "no",["no","yes"])}${selectField("Bowel movement type","bowelType",log.bowelType || "none",["none","easy","normal","hard","diarrhea"])}
-      ${field("Bloating 1-10","bloating",log.bloating || 5)}${field("Constipation 1-10","constipation",log.constipation || 5)}${field("Stress 1-10","stress",log.stress || 5)}${field("Sleep hours","sleep",log.sleep || "","number",'step="0.1"')}
-    </div></div>
-    ${feedbackHTML(log)}
-  `;
+  document.querySelector("#gutContent").innerHTML = `<div class="card"><p class="muted">Gut tracking now lives beside your meals so food, fiber, water, and digestion stay connected.</p><div class="spacer"></div><button class="button" data-action="open-gut-tab">Open Nutrition + Gut</button></div>${gutPanel(dayLog())}`;
 }
 
 function renderWorkouts() {
-  const log = dayLog(), currentIndex = workoutIndex();
+  const log = dayLog(), currentIndex = workoutIndex(), selected=workoutDay===null?currentIndex:workoutDay;
+  log.workoutDetails ||= {}; state.customExercises ||= {};
+  const exercises=[...WORKOUTS[selected][1],...(state.customExercises[selected]||[])];
   document.querySelector("#workoutContent").innerHTML = `
-    <div class="card hero-card"><p class="eyebrow" style="color:#ffe7e7">TODAY · DAY ${currentIndex + 1} OF 7</p><h2>${WORKOUTS[currentIndex][0]}</h2><p class="muted">Complete the planned work, then let your body recover.</p></div>
-    <div class="card"><h3>Today's workout</h3>${WORKOUTS[currentIndex][1].map((x,i)=>`<label class="habit"><input type="checkbox" data-exercise="${i}" ${log.exercises?.[i] ? "checked" : ""}><span>${x}</span></label>`).join("")}
-      <div class="spacer"></div><div class="form-grid">${selectField("Workout complete","workoutCompleted",String(Boolean(log.workoutCompleted)),["false","true"])}${selectField("Cardio complete","cardio",String(Boolean(log.cardio)),["false","true"])}</div>
+    <div class="card hero-card"><p class="eyebrow" style="color:#ffe7e7">TODAY · DAY ${currentIndex + 1} OF 7</p><h2>${WORKOUTS[currentIndex][0]}</h2><p class="muted">Open the plan, track the work, then recover.</p></div>
+    <div class="split-scroll">${WORKOUTS.map((x,i)=>`<button class="${i===selected?"active":""}" data-workout-day="${i}"><span>Day ${i+1}</span><strong>${x[0]}</strong></button>`).join("")}</div>
+    <div class="card"><div class="row"><div><p class="eyebrow">${selected===currentIndex?"TODAY'S WORKOUT":"WORKOUT TEMPLATE"}</p><h3>${WORKOUTS[selected][0]}</h3></div><button class="secondary-button" data-action="add-exercise">+ Exercise</button></div>${exercises.map((x,i)=>{
+        const detail=log.workoutDetails[`${selected}-${i}`]||{}, name=x.split(" · ")[0], prescription=x.split(" · ")[1]||"";
+        return `<div class="exercise-card"><label class="habit"><input type="checkbox" data-exercise="${selected}-${i}" ${log.exercises?.[`${selected}-${i}`] ? "checked" : ""}><span><strong>${name}</strong><small>${prescription}</small></span></label><div class="exercise-grid">${field("Sets",`workoutDetails.${selected}-${i}.sets`,detail.sets)}${field("Reps",`workoutDetails.${selected}-${i}.reps`,detail.reps)}${field("Weight",`workoutDetails.${selected}-${i}.weight`,detail.weight)}${field("Notes",`workoutDetails.${selected}-${i}.notes`,detail.notes,"text")}</div></div>`;
+      }).join("")}
+      <div class="spacer"></div><div class="form-grid">${completeField("Workout","workoutCompleted",log.workoutCompleted)}${completeField("Cardio","cardio",log.cardio)}</div>
       <div class="spacer"></div>${noteField("Workout notes","workoutNotes",log.workoutNotes)}
     </div>
-    <div class="card"><h3>Repeating weekly split</h3>${WORKOUTS.map((x,i)=>`<div class="workout-item row"><div><strong>Day ${i+1}</strong><div class="tiny">${x[0]}</div></div>${i===currentIndex?'<span class="pill">Today</span>':""}</div>`).join("")}</div>
+    <div class="card"><p class="eyebrow">CARDIO FINISHER</p><h3>Optional movement log</h3><div class="form-grid">${selectField("Type","cardioType",log.cardioType||"Treadmill walk",["Treadmill walk","Incline walk","Run / walk intervals","Outdoor walk","Steps finish"])}${field("Duration minutes","cardioMinutes",log.cardioMinutes)}${field("Distance miles","distance",log.distance,"number",'step="0.1"')}${field("Calories if known","cardioCalories",log.cardioCalories)}${completeField("Completed","cardio",log.cardio)}</div></div>
   `;
 }
 
 function renderProgress() {
+  const logs=trendEntries();
   document.querySelector("#progressContent").innerHTML = `
     <div class="metric-grid">
       <div class="metric"><small>7-day calories</small><strong>${avg(dailyEntries(7),"calories") || "—"}</strong></div>
@@ -321,23 +350,23 @@ function renderProgress() {
     </div>
     ${chartCard("Official weight trend", CHECKIN_DAYS.map(day => ({ label:`D${day}`, value:num(state.checkins[day]?.weight) })).filter(x=>x.value), "Official weigh-ins only. Private random weigh-ins never change this chart.")}
     ${chartCard("Waist trend", CHECKIN_DAYS.map(day => ({ label:`D${day}`, value:num(state.checkins[day]?.waist) })).filter(x=>x.value))}
-    ${chartCard("Snatched Score", dailyEntries().map(x=>({label:formatDate(x.date),value:score(x)})))}
-    ${chartCard("Calories consumed", dailyEntries().map(x=>({label:formatDate(x.date),value:num(x.calories)})).filter(x=>x.value))}
-    ${chartCard("Average calorie deficit", dailyEntries().map(x=>({label:formatDate(x.date),value:deficit(x)})).filter(x=>x.value))}
-    ${chartCard("Protein", dailyEntries().map(x=>({label:formatDate(x.date),value:num(x.protein)})).filter(x=>x.value))}
-    ${chartCard("Fiber", dailyEntries().map(x=>({label:formatDate(x.date),value:num(x.fiber)})).filter(x=>x.value))}
-    ${chartCard("Water", dailyEntries().map(x=>({label:formatDate(x.date),value:num(x.water)})).filter(x=>x.value))}
-    ${chartCard("Steps", dailyEntries().map(x=>({label:formatDate(x.date),value:num(x.steps)})).filter(x=>x.value))}
-    ${chartCard("Sleep", dailyEntries().map(x=>({label:formatDate(x.date),value:num(x.sleep)})).filter(x=>x.value))}
-    ${chartCard("Bloating", dailyEntries().map(x=>({label:formatDate(x.date),value:num(x.bloating)})).filter(x=>x.value))}
-    ${chartCard("Constipation", dailyEntries().map(x=>({label:formatDate(x.date),value:num(x.constipation)})).filter(x=>x.value))}
-    ${chartCard("Gut Health Score", dailyEntries().map(x=>({label:formatDate(x.date),value:gutScore(x)})))}
-    <div class="card"><h3>45-day calendar</h3><p class="tiny">Green means the day was completed or reset. Gold dots mark official check-ins.</p><div class="spacer"></div>${calendarHTML()}</div>
+    ${chartCard("Snatched Score", logs.map(x=>({label:formatDate(x.date),value:score(x)})))}
+    ${chartCard("Calories consumed", logs.map(x=>({label:formatDate(x.date),value:num(x.calories)})).filter(x=>x.value))}
+    ${chartCard("Average calorie deficit", logs.map(x=>({label:formatDate(x.date),value:deficit(x)})).filter(x=>x.value))}
+    ${chartCard("Protein", logs.map(x=>({label:formatDate(x.date),value:num(x.protein)})).filter(x=>x.value))}
+    ${chartCard("Fiber", logs.map(x=>({label:formatDate(x.date),value:num(x.fiber)})).filter(x=>x.value))}
+    ${chartCard("Water", logs.map(x=>({label:formatDate(x.date),value:num(x.water)})).filter(x=>x.value))}
+    ${chartCard("Steps", logs.map(x=>({label:formatDate(x.date),value:num(x.steps)})).filter(x=>x.value))}
+    ${chartCard("Sleep", logs.map(x=>({label:formatDate(x.date),value:num(x.sleep)})).filter(x=>x.value))}
+    ${chartCard("Bloating", logs.map(x=>({label:formatDate(x.date),value:num(x.bloating)})).filter(x=>x.value))}
+    ${chartCard("Constipation", logs.map(x=>({label:formatDate(x.date),value:num(x.constipation)})).filter(x=>x.value))}
+    ${chartCard("Gut Health Score", logs.map(x=>({label:formatDate(x.date),value:gutScore(x)})))}
+    <div class="card"><h3>45-day calendar</h3><p class="tiny">Tap any day to view its log. Gold dots mark official check-ins.</p><div class="spacer"></div>${calendarHTML()}</div>
     <div class="card"><h3>Progress badges</h3><div class="row wrap">${badgesHTML()}</div></div>
   `;
 }
 function chartCard(title, data, note = "") {
-  return `<div class="card"><h3>${title}</h3>${note ? `<p class="tiny">${note}</p>` : ""}${data.length ? lineChart(data) : `<div class="empty">Your trend will appear after you log data.</div>`}</div>`;
+  return `<div class="card"><h3>${title}</h3>${note ? `<p class="tiny">${note}</p>` : ""}${data.length ? lineChart(data) : `<div class="empty">No trends yet. Your first trend will appear after your first few logs.</div>`}</div>`;
 }
 function lineChart(data) {
   const width=500,height=150,pad=18, vals=data.map(x=>x.value), min=Math.min(...vals), max=Math.max(...vals), range=max-min || 1;
@@ -346,8 +375,8 @@ function lineChart(data) {
 }
 function calendarHTML() {
   return `<div class="calendar">${Array.from({length:45},(_,i)=>i+1).map(day => {
-    const date=challengeDate(day), log=state.daily[date], complete=log&&(score(log)>=60||log.reset), classes=["day",complete?"complete":"",day===getDayNumber()?"current":"",CHECKIN_DAYS.includes(day)?"checkin":"",(date===state.settings.miniEventDate||date===state.settings.endDate)?"event":""].join(" ");
-    return `<div class="${classes}" title="${date}${date===state.settings.miniEventDate?" · Seattle":date===state.settings.endDate?" · Blast Fest":""}">${day}</div>`;
+    const date=challengeDate(day), log=state.daily[date], complete=log&&(score(log)>=60||log.reset), extra=(state.extraEvents||[]).find(x=>x.date===date), eventName=date===state.settings.miniEventDate?state.settings.miniEventName:date===state.settings.endDate?state.settings.eventName:extra?.name, classes=["day",complete?"complete":"",day===getDayNumber()?"current":"",CHECKIN_DAYS.includes(day)?"checkin":"",eventName?"event":""].join(" ");
+    return `<button class="${classes}" data-calendar-day="${date}" title="${date}${eventName?` · ${eventName}`:""}"><span>${day}</span><small>${parseDate(date).getDate()}</small></button>`;
   }).join("")}</div>`;
 }
 function badgesHTML() {
@@ -407,24 +436,42 @@ Please analyze my progress and tell me what to adjust.`;
 }
 function renderCoach() {
   document.querySelector("#coachContent").innerHTML = `
-    <div class="card hero-card"><p class="eyebrow" style="color:#ffe7e7">9-DAY REVIEW</p><h2>Patterns over perfection.</h2><p class="muted">Copy a clean summary into ChatGPT whenever you want a deeper coaching review.</p></div>
-    <div class="card"><p class="eyebrow">YOUR PRIVATE COACH JOURNAL</p><h3 style="margin-top:5px">Weekly / 9-day summary</h3><p class="muted">One clear report. No overthinking required.</p><div class="spacer"></div><textarea id="summaryText" style="min-height:360px">${summary()}</textarea><div class="spacer"></div><button class="button" data-action="copy-summary">Copy summary for ChatGPT</button></div>
-    <div class="coach-note"><p class="eyebrow">COACHING PROMPT</p><p style="margin-top:5px">Paste your copied report into ChatGPT and ask for your top three priorities for the next nine days.</p></div>
+    <div class="card hero-card"><p class="eyebrow" style="color:#ffe7e7">AI COACH</p><h2>Get clear feedback.</h2><p class="muted">Paste a clean summary into ChatGPT when you want help adjusting the plan.</p></div>
+    <div class="card"><p class="eyebrow">COPY FOR CHATGPT</p><div class="stack"><button class="quick-add" data-action="copy-daily-summary"><strong>Copy Daily Summary</strong><br><span class="tiny">Use for a quick same-day adjustment.</span></button><button class="quick-add" data-action="copy-summary"><strong>Copy 9-Day Summary</strong><br><span class="tiny">Use for a deeper progress review.</span></button><button class="quick-add" data-action="copy-photo-prompt"><strong>Copy Meal Photo Prompt</strong><br><span class="tiny">Attach a meal photo in ChatGPT and estimate the macros.</span></button></div></div>
+    <div class="coach-note"><p class="eyebrow">COACHING PROMPT</p><p style="margin-top:5px">Paste this into ChatGPT when you want feedback. Ask for your top three priorities and one thing to simplify.</p></div>
+    <div class="card"><p class="eyebrow">SAVE COACH FEEDBACK</p><h3>Keep advice you want to revisit</h3><textarea id="coachFeedback" placeholder="Paste useful coach feedback here..."></textarea><div class="spacer"></div><button class="button" data-action="save-coach-note">Save coach note</button></div>
+    <div class="card"><p class="eyebrow">SAVED COACH NOTES</p>${(state.coachNotes||[]).length?state.coachNotes.map(x=>`<div class="coach-note"><span class="tiny">${formatDate(x.date)}</span><p>${x.text}</p></div>`).join(""):`<div class="empty">No saved coach notes yet.</div>`}</div>
     <div class="card"><p class="eyebrow">A NOTE FOR THE JOURNEY</p><p>Weight, measurements, habits, and context belong together. Photos stay local to your device and are not pasted into the text report.</p></div>
   `;
 }
+function dailySummary() { const log=dayLog(); return `Blast Fest Daily Check-In:
+Date: ${formatDate(todayKey())}
+Day: ${getDayNumber()} of 45
+Schedule type: ${routineToday()[0]}
+Calories: ${num(log.calories)||"—"}
+Protein: ${num(log.protein)||"—"}g
+Fiber: ${num(log.fiber)||"—"}g
+Water: ${num(log.water)||"—"} oz
+Steps: ${num(log.steps)||"—"}
+Workout: ${log.workoutCompleted?"Complete":"Not complete"}
+Poop: ${log.poop==="yes"?"Yes":"No"}
+Bloating: ${num(log.bloating)||"—"}/10
+Notes: ${log.notes||"—"}
+Please tell me the top three priorities for tomorrow and one thing to simplify.`; }
 
 function renderSettings() {
   const s=state.settings;
   document.querySelector("#settingsContent").innerHTML = `
-    <div class="card"><h3>Challenge dates</h3><div class="spacer"></div><div class="form-grid">${field("Start date","settings.startDate",s.startDate,"date")}${field("Blast Fest","settings.endDate",s.endDate,"date")}${field("Seattle concert","settings.miniEventDate",s.miniEventDate,"date")}</div></div>
-    <div class="card"><h3>Your goals</h3><div class="spacer"></div><div class="form-grid">
-      ${field("Height inches","settings.height",s.height)}${field("Age","settings.age",s.age)}${selectField("Sex","settings.sex",s.sex,["female","male"])}${field("Official start weight","settings.startWeight",s.startWeight,"number",'step="0.1"')}
+    <div class="card hero-card"><p class="eyebrow" style="color:#f7d9d7">PERSONALIZE YOUR TRACKER</p><h2>Built around your real life.</h2><p class="muted">Set the plan once. Let the app make daily decisions smaller.</p></div>
+    <div class="card"><p class="eyebrow">START FRESH TOMORROW</p><h3>Ready for your real Day 1?</h3><p class="muted">Clear preview logs and begin fresh on June 2, 2026. Your meal and workout templates stay ready.</p><div class="spacer"></div><button class="button" data-action="fresh-start">Clear Sample Data + Start My Real Tracker</button></div>
+    <div class="card"><p class="eyebrow">CHALLENGE SETTINGS</p><h3>Dates and events</h3><div class="spacer"></div><div class="form-grid">${field("Start date","settings.startDate",s.startDate,"date")}${field("Final event date","settings.endDate",s.endDate,"date")}${field("Final event name","settings.eventName",s.eventName,"text")}${field("Seattle concert date","settings.miniEventDate",s.miniEventDate,"date")}${field("Seattle concert name","settings.miniEventName",s.miniEventName,"text")}</div><div class="spacer"></div>${(state.extraEvents||[]).map((x,i)=>`<div class="checkin-item row"><div><strong>${x.name}</strong><div class="tiny">${formatDate(x.date)}${x.notes?` · ${x.notes}`:""}</div></div><button class="secondary-button" data-remove-event="${i}">Remove</button></div>`).join("")}<button class="secondary-button" data-action="add-event">+ Add another event</button></div>
+    <div class="card"><p class="eyebrow">USER PROFILE</p><h3>Your goals</h3><div class="spacer"></div><div class="form-grid">
+      ${field("Name","settings.name",s.name,"text")}${field("Age","settings.age",s.age)}${field("Height feet","settings.heightFeet",s.heightFeet)}${field("Height inches","settings.heightInches",s.heightInches)}${field("Official start weight","settings.startWeight",s.startWeight,"number",'step="0.1"')}
       ${field("Goal weight","settings.goalWeight",s.goalWeight,"number",'step="0.1"')}${selectField("Activity level","settings.activity",s.activity,["sedentary","light","moderate","active"])}${selectField("Goal intensity","settings.intensity",s.intensity,["moderate","aggressive"])}
       ${field("Water goal oz","settings.waterGoal",s.waterGoal)}${field("Protein goal g","settings.proteinGoal",s.proteinGoal)}${field("Fiber goal g","settings.fiberGoal",s.fiberGoal)}${field("Step goal","settings.stepGoal",s.stepGoal)}${field("Calorie target","settings.calorieTarget",s.calorieTarget)}${field("Deficit target","settings.deficitTarget",s.deficitTarget)}
-    </div></div>
+    </div><p class="tiny">Height display: ${s.heightFeet}′${s.heightInches}″</p></div>
     <div class="card"><h3>TDEE calculator</h3><div class="spacer"></div><div class="grid-2"><div><span class="tiny">BMR</span><strong>${bmr()} cal</strong></div><div><span class="tiny">Maintenance</span><strong>${tdee()} cal</strong></div><div><span class="tiny">Moderate target</span><strong>${tdee()-500} cal</strong></div><div><span class="tiny">Aggressive target</span><strong>${Math.max(1200,tdee()-750)} cal</strong></div></div><div class="spacer"></div>${s.calorieTarget<1200?'<div class="feedback">Your target is too low for this tracker. Choose a more sustainable calorie target and seek professional guidance for personalized needs.</div>':'<p class="tiny">Recommended targets avoid extreme starvation calories. Individual needs vary.</p>'}</div>
-    <div class="card"><h3>In-app reminders</h3><p class="muted">Water · protein · fiber · walk · meal prep · steps · stretch · night routine · official check-in</p><div class="spacer"></div><button class="secondary-button" data-action="notifications">Enable browser reminders</button></div>
+    <div class="card"><h3>Routine-based reminders</h3><p class="muted">${routineToday()[2].join(" · ")}</p><div class="spacer"></div><button class="secondary-button" data-action="notifications">Enable optional browser reminders</button></div>
     <div class="card"><h3>Starter data</h3><p class="muted">Load sample days to preview charts, or clear all tracker data when you are ready for a fresh start.</p><div class="spacer"></div><div class="row wrap"><button class="secondary-button" data-action="samples">Load sample data</button><button class="danger-button" data-action="clear-data">Clear all data</button></div></div>
     <div class="card"><p class="eyebrow">SAFETY NOTE</p><p>This tracker supports wellness and consistency. It is not medical advice. If you experience dizziness, fainting, extreme fatigue, severe constipation, chest pain, disordered eating symptoms, or worsening health symptoms, seek medical guidance.</p></div>
     <div class="card"><p class="tiny">All tracker data stays on this device in your browser. Version 1 stores simple data in localStorage and photos in IndexedDB when available.</p></div>
@@ -447,7 +494,7 @@ function go(page) {
 }
 function toast(text) { const el=document.querySelector("#toast"); el.textContent=text; el.classList.add("show"); clearTimeout(toast.timer); toast.timer=setTimeout(()=>el.classList.remove("show"),2200); }
 function modal(html) { const el=document.querySelector("#modal"); el.innerHTML=`<div id="modalContent">${html}</div>`; el.showModal(); }
-function setDeep(obj, path, value) { const parts=path.split("."); const last=parts.pop(); const target=parts.reduce((x,k)=>x[k],obj); target[last]=value; }
+function setDeep(obj, path, value) { const parts=path.split("."); const last=parts.pop(); const target=parts.reduce((x,k)=>(x[k] ||= {}),obj); target[last]=value; }
 function coerce(input) {
   if (input.tagName==="SELECT" && ["true","false"].includes(input.value)) return input.value==="true";
   if (input.type==="number") return input.value===""?"":num(input.value);
@@ -455,7 +502,7 @@ function coerce(input) {
 }
 
 document.addEventListener("click", e => {
-  const nav=e.target.closest("[data-nav]"), goButton=e.target.closest("[data-go]"), quickMeal=e.target.closest("[data-quick-meal]"), removeMeal=e.target.closest("[data-remove-meal]"), checkin=e.target.closest("[data-checkin]"), microphone=e.target.closest("[data-mic]"), action=e.target.closest("[data-action]");
+  const nav=e.target.closest("[data-nav]"), goButton=e.target.closest("[data-go]"), quickMeal=e.target.closest("[data-quick-meal]"), removeMeal=e.target.closest("[data-remove-meal]"), checkin=e.target.closest("[data-checkin]"), microphone=e.target.closest("[data-mic]"), action=e.target.closest("[data-action]"), tab=e.target.closest("[data-nutrition-tab]"), grocery=e.target.closest("[data-grocery]"), workout=e.target.closest("[data-workout-day]"), calendar=e.target.closest("[data-calendar-day]"), removeEvent=e.target.closest("[data-remove-event]");
   if(nav) go(nav.dataset.nav); if(goButton) go(goButton.dataset.go);
   if(e.target.matches("[data-close]")) document.querySelector("#modal").close();
   if(e.target.matches("[data-habit]")) { dayLog().habits[e.target.dataset.habit]=e.target.checked; saveState(); render(); }
@@ -465,11 +512,17 @@ document.addEventListener("click", e => {
   if(checkin) checkinModal(num(checkin.dataset.checkin));
   if(microphone) startDictation(microphone.dataset.mic);
   if(action) handleAction(action.dataset.action);
+  if(tab) { nutritionTab=tab.dataset.nutritionTab; renderNutrition(); }
+  if(grocery) { state.groceries[num(grocery.dataset.grocery)].done=grocery.checked; saveState(); renderNutrition(); }
+  if(workout) { workoutDay=num(workout.dataset.workoutDay); renderWorkouts(); }
+  if(calendar) openDayModal(calendar.dataset.calendarDay);
+  if(removeEvent) { state.extraEvents.splice(num(removeEvent.dataset.removeEvent),1); saveState(); renderSettings(); }
 });
 document.addEventListener("change", e => {
   if(e.target.matches("[data-field]")) {
     const key=e.target.dataset.field, value=coerce(e.target);
-    if(key.startsWith("settings.")) setDeep(state,key,value); else dayLog()[key]=value;
+    if(key.startsWith("settings.")) { setDeep(state,key,value); state.settings.height=num(state.settings.heightFeet)*12+num(state.settings.heightInches); }
+    else if(key.includes(".")) setDeep(dayLog(),key,value); else dayLog()[key]=value;
     saveState(); render();
   }
   if(e.target.matches("[data-photo]") && e.target.files[0]) storePhoto(e.target.dataset.photo,e.target.files[0]);
@@ -481,24 +534,41 @@ document.addEventListener("submit", e => {
     state.checkins[day]=data; saveState(); document.querySelector("#modal").close(); toast(`Day ${day} official check-in saved`); render();
   }
 });
-document.querySelector("#quickModeButton").addEventListener("click",()=>{quickMode=!quickMode; document.querySelector("#quickModeButton").textContent=quickMode?"Full check-in":"Quick mode"; renderToday();});
+document.querySelector("#quickModeButton").addEventListener("click",()=>{quickMode=!quickMode; document.querySelector("#quickModeButton").textContent=quickMode?"Full check-in":"Quick log"; renderToday();});
 document.querySelector("#notificationButton").addEventListener("click",()=>handleAction("notifications"));
 
 function handleAction(action) {
+  if(action==="quick-log") { quickMode=true; go("today"); document.querySelector("#quickModeButton").textContent="Full check-in"; }
+  if(action==="full-checkin") { quickMode=false; go("today"); document.querySelector("#quickModeButton").textContent="Quick log"; }
+  if(action==="open-gut-tab") { nutritionTab="gut"; go("nutrition"); }
   if(action==="reset") modal(`<div class="modal-body"><p class="eyebrow">EMERGENCY RESET</p><h2>Okay. The day is not ruined.</h2><p>Complete the reset three:</p><div class="card"><strong>1. Drink 24 oz water</strong><br><strong>2. Eat protein</strong><br><strong>3. Walk 15 minutes</strong></div><div class="modal-actions"><button class="secondary-button" data-close>Close</button><button class="button" data-action="complete-reset">Mark reset complete</button></div></div>`);
   if(action==="complete-reset") { dayLog().reset=true; saveState(); document.querySelector("#modal").close(); toast("Reset complete. That counts."); render(); }
   if(action==="custom-meal") modal(`<div class="modal-body"><p class="eyebrow">CUSTOM MEAL</p><h2>Add a meal</h2><form id="customMealForm"><div class="form-grid">${field("Meal name","name","","text")}${field("Meal type","type","Meal","text")}${field("Calories","calories","")}${field("Protein g","protein","")}${field("Fiber g","fiber","")}${field("Carbs g","carbs","")}${field("Fat g","fat","")}${noteField("Meal notes","mealNotes","")}</div><div class="modal-actions"><button type="button" class="secondary-button" data-close>Cancel</button><button class="button">Add meal</button></div></form></div>`);
   if(action==="random-weight") modal(`<div class="modal-body"><p class="eyebrow">PRIVATE RANDOM WEIGH-IN</p><h2>This is not an official check-in day.</h2><p>Daily scale changes can be water, sodium, constipation, sleep, or hormones. Do you still want to log this as a private random weigh-in?</p><form id="randomWeightForm"><div class="spacer"></div>${field("Private weight","privateWeight","","number",'step="0.1"')}<div class="modal-actions"><button type="button" class="secondary-button" data-close>Cancel</button><button class="button">Log privately</button></div></form></div>`);
   if(action==="copy-summary") navigator.clipboard.writeText(summary()).then(()=>toast("Summary copied for ChatGPT"));
+  if(action==="copy-daily-summary") navigator.clipboard.writeText(dailySummary()).then(()=>toast("Daily summary copied"));
+  if(action==="copy-photo-prompt") navigator.clipboard.writeText("I am attaching a meal photo. Please estimate calories, protein, fiber, carbs, fat, and sodium range. Tell me how to make this meal more supportive of my protein and gut-health goals without being extreme.").then(()=>toast("Meal photo prompt copied"));
+  if(action==="save-coach-note") { const text=document.querySelector("#coachFeedback")?.value.trim(); if(text){ state.coachNotes.push({date:todayKey(),text}); saveState(); toast("Coach note saved"); renderCoach(); } }
   if(action==="notifications") requestNotifications();
   if(action==="samples") { loadSamples(); toast("Sample data loaded"); render(); }
+  if(action==="fresh-start") modal(`<div class="modal-body"><p class="eyebrow">START FRESH</p><h2>Begin your real tracker on June 2?</h2><p>This clears preview logs, fake trends, completed samples, meals, and check-ins. Your templates and goals stay ready.</p><div class="modal-actions"><button class="secondary-button" data-close>Cancel</button><button class="button" data-action="confirm-fresh-start">Start my real tracker</button></div></div>`);
+  if(action==="confirm-fresh-start") { state=createDefaultState(); saveState(); document.querySelector("#modal").close(); toast("Clean slate ready. Day 1 starts June 2."); render(); }
+  if(action==="add-event") modal(`<div class="modal-body"><p class="eyebrow">EXTRA EVENT</p><h2>Add a milestone</h2><form id="eventForm"><div class="form-grid">${field("Event name","eventName","","text")}${field("Event date","eventDate","","date")}${noteField("Goal or notes","eventNotes","")}</div><div class="modal-actions"><button type="button" class="secondary-button" data-close>Cancel</button><button class="button">Save event</button></div></form></div>`);
+  if(action==="add-grocery") modal(`<div class="modal-body"><h2>Add grocery item</h2><form id="groceryForm">${field("Item name","groceryName","","text")}<div class="modal-actions"><button type="button" class="secondary-button" data-close>Cancel</button><button class="button">Add item</button></div></form></div>`);
+  if(action==="wholefoods-meal") modal(`<div class="modal-body"><p class="eyebrow">WHOLE FOODS LOG</p><h2>Log meal prep</h2><form id="wholeFoodsForm"><div class="form-grid">${field("Meal name","name","","text")}${field("Calories","calories","")}${field("Protein g","protein","")}${field("Fiber g","fiber","")}${field("Carbs g","carbs","")}${field("Fat g","fat","")}${field("Sodium optional","sodium","")}${field("Rating 1-5","rating","5")}${noteField("Meal notes","mealNotes","")}<label>Meal photo<input type="file" accept="image/*" capture="environment" data-photo="wholefoods-${todayKey()}"></label></div><div class="modal-actions"><button type="button" class="secondary-button" data-close>Cancel</button><button class="button">Log meal</button></div></form></div>`);
+  if(action==="add-exercise") modal(`<div class="modal-body"><h2>Add exercise</h2><form id="exerciseForm">${field("Exercise name","exerciseName","","text")}<div class="modal-actions"><button type="button" class="secondary-button" data-close>Cancel</button><button class="button">Add exercise</button></div></form></div>`);
   if(action==="clear-data") modal(`<div class="modal-body"><h2>Clear all local data?</h2><p>This removes daily logs, meals, check-ins, private weigh-ins, and settings from this browser.</p><div class="modal-actions"><button class="secondary-button" data-close>Cancel</button><button class="danger-button" data-action="confirm-clear">Clear everything</button></div></div>`);
   if(action==="confirm-clear") { localStorage.removeItem(STORAGE_KEY); state=createDefaultState(); saveState(); document.querySelector("#modal").close(); toast("Tracker cleared"); render(); }
 }
 document.addEventListener("submit",e=>{
   if(e.target.id==="customMealForm"){e.preventDefault();const d={};e.target.querySelectorAll("[data-field]").forEach(x=>d[x.dataset.field]=coerce(x));addMeal([d.name||"Custom meal",d.type||"Meal",num(d.calories),num(d.protein),num(d.fiber),num(d.carbs),num(d.fat)]);document.querySelector("#modal").close();}
   if(e.target.id==="randomWeightForm"){e.preventDefault();state.randomWeights.push({date:todayKey(),weight:num(e.target.querySelector("[data-field=privateWeight]").value)});saveState();document.querySelector("#modal").close();toast("Stored privately");render();}
+  if(e.target.id==="eventForm"){e.preventDefault();const inputs=e.target.querySelectorAll("[data-field]");const data={};inputs.forEach(x=>data[x.dataset.field]=coerce(x));if(!data.eventDate)return toast("Add a date for this milestone.");state.extraEvents.push({name:data.eventName||"Extra event",date:data.eventDate,notes:data.eventNotes});saveState();document.querySelector("#modal").close();toast("Event added");renderSettings();}
+  if(e.target.id==="groceryForm"){e.preventDefault();const name=e.target.querySelector("[data-field=groceryName]").value.trim();if(name)state.groceries.push({name,done:false});saveState();document.querySelector("#modal").close();renderNutrition();}
+  if(e.target.id==="wholeFoodsForm"){e.preventDefault();const d={};e.target.querySelectorAll("[data-field]").forEach(x=>d[x.dataset.field]=coerce(x));addMeal([d.name||"Whole Foods meal prep","Meal prep",num(d.calories),num(d.protein),num(d.fiber),num(d.carbs),num(d.fat)]);document.querySelector("#modal").close();}
+  if(e.target.id==="exerciseForm"){e.preventDefault();const name=e.target.querySelector("[data-field=exerciseName]").value.trim();const selected=workoutDay===null?workoutIndex():workoutDay;if(name)(state.customExercises[selected]||=[]).push(name);saveState();document.querySelector("#modal").close();renderWorkouts();}
 });
+function openDayModal(date) { const log=state.daily[date], day=getDayNumber(date); modal(`<div class="modal-body"><p class="eyebrow">DAY ${day} · ${formatDate(date)}</p><h2>${log&&hasLogData(log)?"Logged day":"No log yet"}</h2>${log&&hasLogData(log)?`<div class="compare-grid"><div class="compare-card"><span class="tiny">Water</span><strong>${num(log.water)} oz</strong></div><div class="compare-card"><span class="tiny">Protein</span><strong>${num(log.protein)}g</strong></div><div class="compare-card"><span class="tiny">Steps</span><strong>${num(log.steps)}</strong></div><div class="compare-card"><span class="tiny">Score</span><strong>${score(log)}</strong></div></div><p class="muted">${log.notes||"No notes added."}</p>`:`<p class="muted">Nothing logged for this date yet.</p>`}<div class="modal-actions"><button class="secondary-button" data-close>Close</button></div></div>`); }
 
 function startDictation(fieldId) {
   const SpeechRecognition=window.SpeechRecognition||window.webkitSpeechRecognition;
@@ -528,5 +598,4 @@ function loadSamples() {
 }
 
 if("serviceWorker" in navigator) window.addEventListener("load",()=>navigator.serviceWorker.register("./service-worker.js"));
-if(!localStorage.getItem(STORAGE_KEY)) loadSamples();
 render();

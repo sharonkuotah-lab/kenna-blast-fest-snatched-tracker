@@ -9,10 +9,23 @@ Phase 2 adds a more elevated soft-glam wellness identity while preserving the co
 ### Design System
 
 - Palette: warm cream `#f8f1ec`, soft blush `#e7b7b6`, dusty rose `#bd7180`, mauve `#a98791`, champagne `#bc945e`, and espresso `#241b1c`
-- Headings: [Cormorant Garamond](https://fonts.google.com/specimen/Cormorant+Garamond)
+- Headings: [Playfair Display](https://fonts.google.com/specimen/Playfair+Display)
 - Body text: [DM Sans](https://fonts.google.com/specimen/DM+Sans)
 - Decorative brand mark: [Italiana](https://fonts.google.com/specimen/Italiana)
 - UI language: translucent glass cards, editorial spacing, rounded corners, pill buttons, restrained gradients, and large mobile-friendly touch targets
+
+## Phase 2.1 Routine Integration
+
+Phase 2.1 makes the app calmer and more personal for daily use:
+
+- Clean-start flow for a real June 2, 2026 Day 1 without sample trends
+- Routine-aware missions for class days, clinical shifts, recovery days, off days, prep days, and Sunday resets
+- Minimal dashboard with collapsible calorie, gut, trend, event, and reminder details
+- Clear 30-second Quick Log and detailed Full Check-In modes
+- Combined Nutrition + Gut workspace with Meals, Gut, Grocery, and Whole Foods tabs
+- Camera-ready meal photo input, grocery builder, and repeatable Whole Foods meal-prep logs
+- Workout split browser with sets, reps, weight, notes, cardio tracking, and custom exercises
+- Clickable challenge calendar, empty trend states, extra event support, and expanded AI Coach tools
 
 ## Features
 
@@ -54,7 +67,7 @@ All paths are relative, so the PWA works from a GitHub Pages project subdirector
 
 Daily logs, settings, meals, check-ins, and private weigh-ins are stored in `localStorage`. Photos are stored in IndexedDB when the browser supports it. Data remains on the current device and browser profile.
 
-The first launch includes clearly labeled sample logs so the dashboard and charts are easy to explore. Use **Settings > Clear all data** to remove sample or tracker data. Clearing browser site data also removes it.
+New trackers start clean. Existing preview data can be removed with **Settings > Clear Sample Data + Start My Real Tracker**. Use **Settings > Clear all data** to remove all local tracker data. Clearing browser site data also removes it.
 
 ## Limitations
 
