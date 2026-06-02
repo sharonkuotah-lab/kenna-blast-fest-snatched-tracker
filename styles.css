@@ -242,6 +242,45 @@ details[open] summary::after { content:"−"; }
 .achievement-card.earned strong { color:var(--rose-dark); }
 .achievement-card.locked { opacity:.68; }
 
+/* Phase 6: Kenna Operating System */
+.os-card { padding:22px 19px; border-color:rgba(255,255,255,.76); background:linear-gradient(145deg,rgba(255,253,250,.9),rgba(250,244,239,.72)); box-shadow:0 10px 34px rgba(91,55,61,.075); }
+.os-card h2 { margin:6px 0 9px; font-size:32px; }
+.os-grid,.renpho-grid,.progression-grid,.timeline-grid { display:grid; gap:10px; margin-top:15px; }
+.os-grid { grid-template-columns:repeat(2,1fr); }
+.os-stat,.renpho-metric,.progression-card,.timeline-card { border:0; border-radius:23px; background:rgba(255,255,255,.58); box-shadow:inset 0 0 0 1px rgba(255,255,255,.64); }
+.os-stat { display:grid; min-height:92px; align-content:end; padding:14px; }
+.os-stat span,.renpho-metric span,.progression-card span { color:var(--muted); font-size:10px; font-weight:800; text-transform:uppercase; letter-spacing:.7px; }
+.os-stat strong { margin-top:5px; color:var(--rose-dark); font-family:var(--font-display); font-size:27px; line-height:1; }
+.os-stat.improving strong,.renpho-metric.improving strong { color:#60735e; }
+.os-stat.attention strong,.renpho-metric.attention strong { color:#b0793f; }
+.goal-bar { margin-top:14px; }
+.renpho-grid { grid-template-columns:repeat(2,1fr); }
+.renpho-metric { display:grid; gap:4px; padding:13px; }
+.renpho-metric strong { color:var(--rose-dark); font-size:20px; }
+.renpho-metric small { color:var(--muted); font-size:10px; }
+.renpho-metric.improving { background:rgba(224,236,218,.6); }
+.renpho-metric.neutral { background:rgba(232,212,173,.36); }
+.renpho-metric.attention { background:rgba(244,221,190,.6); }
+.timeline-grid { grid-template-columns:repeat(3,1fr); }
+.timeline-card { display:grid; min-height:88px; align-content:center; gap:4px; padding:12px; color:var(--ink); text-align:left; }
+.timeline-card strong { color:var(--rose-dark); font-family:var(--font-display); font-size:22px; line-height:1; }
+.timeline-card span,.timeline-card small { color:var(--muted); font-size:10px; }
+.progression-card { display:grid; gap:4px; padding:14px; }
+.progression-card strong { color:var(--rose-dark); font-size:18px; }
+.progression-card small { color:var(--muted); font-size:10px; }
+.progression-card b { width:max-content; padding:4px 8px; border-radius:99px; color:#60735e; background:rgba(224,236,218,.78); font-size:9px; text-transform:uppercase; letter-spacing:.6px; }
+.photo-gallery { display:grid; gap:12px; margin-top:14px; }
+.photo-tile { padding:12px; border-radius:22px; background:rgba(255,255,255,.58); }
+.photo-tile img { width:100%; max-height:70vh; object-fit:contain; border-radius:18px; background:var(--pink-wash); }
+.final-report pre { white-space:pre-wrap; padding:15px; border-radius:20px; background:rgba(255,255,255,.66); color:var(--ink); font:12px/1.55 var(--font-ui); }
+@media print {
+  .app-header,.bottom-nav,.fab-button,.toast,.modal-actions { display:none!important; }
+  body { background:#fff; }
+  .modal[open] { position:static; width:100%; max-height:none; box-shadow:none; background:#fff; }
+  .modal::backdrop { display:none; }
+  .modal-body { padding:0; }
+}
+
 @media (min-width: 680px) {
   .metric-grid { grid-template-columns: repeat(4, 1fr); }
   .app-header { max-width: 780px; margin: auto; }

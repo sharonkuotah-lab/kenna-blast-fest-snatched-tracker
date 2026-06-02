@@ -70,6 +70,19 @@ Phase 2.1 makes the app calmer and more personal for daily use:
 - The Weekly Report summarizes wins, areas to improve, forecast, best habit, worst habit, and next-week focus with one-click copy.
 - Detailed tracking still exists, but it is tucked behind buttons, tabs, and expandable sections so daily use feels calm instead of crowded.
 
+## Phase 6 Kenna Operating System
+
+- The app now behaves more like a personal transformation dashboard than a weight-loss tracker.
+- Whole Foods Builder 2.0 supports one-tap logging, editing, duplicating, deleting, and saving variations of repeat meals.
+- The RENPHO Import Center compares current official measurements against the June 2 baseline with soft green, champagne, and orange status colors.
+- Body Recomp Dashboard prioritizes waist change, body fat change, muscle retention, and Transformation Score before scale weight.
+- Seattle and Blast Fest goal visualization cards show progress from the official baseline toward event-specific goals.
+- Photo Timeline gives every official check-in day a gallery entry and keeps Day 1 comparison tools available.
+- Gym Progression Center summarizes current, previous, best, and personal-record status for key lifts.
+- Sunday Planning creates a weekly setup ritual for meals, groceries, workouts, school, appointments, and events.
+- Content Creator Mode tracks optional photoshoots, brand deadlines, trips, campaign goals, and future milestones.
+- Day 45 Transformation Report generates a printable scrapbook-style report that can be saved as a PDF from the browser print dialog.
+
 ## Features
 
 - Smart Morning Dashboard with event countdowns, Top 3 priorities, Today's Score, streaks, quick actions, and missed-day recovery

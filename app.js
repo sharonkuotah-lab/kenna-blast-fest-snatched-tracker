@@ -66,6 +66,7 @@ const DEFAULT_SETTINGS = {
   name: "Kenna / Sharon", startDate: "2026-06-02", endDate: "2026-07-18", eventName: "Blast Fest",
   miniEventDate: "2026-06-19", miniEventName: "Seattle Concert", heightFeet: 5, heightInches: 8, height: 68,
   age: 25, sex: "female", startWeight: 184.2, goalWeight: 170,
+  seattleGoalWeight: 177, blastFestGoalWeight: 168,
   activity: "moderate", intensity: "aggressive", waterGoal: 100, proteinGoal: 140,
   fiberGoal: 25, stepGoal: 10000, calorieTarget: 1750, deficitTarget: 650, units: "US"
 };
@@ -133,7 +134,7 @@ function formatDate(value) { return parseDate(value).toLocaleDateString(undefine
 function saveState() { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
 
 function createDefaultState() {
-  return { settings: { ...DEFAULT_SETTINGS }, baseline: { ...STARTING_BASELINE }, baselineVersion: BASELINE_VERSION, daily: {}, checkins: { 1: officialBaselineCheckin() }, randomWeights: [], favorites: [], savedMeals: DEFAULT_SAVED_MEALS.map(cloneMealTemplate), wholeFoodsMeals: WHOLE_FOODS_DEFAULTS.map(x=>({...x})), groceries: GROCERY_DEFAULTS.map(name=>({name,done:false})), extraEvents: [], coachNotes: [], reminders: true, samplesLoaded: false };
+  return { settings: { ...DEFAULT_SETTINGS }, baseline: { ...STARTING_BASELINE }, baselineVersion: BASELINE_VERSION, daily: {}, checkins: { 1: officialBaselineCheckin() }, randomWeights: [], favorites: [], savedMeals: DEFAULT_SAVED_MEALS.map(cloneMealTemplate), wholeFoodsMeals: WHOLE_FOODS_DEFAULTS.map(x=>({...x})), groceries: GROCERY_DEFAULTS.map(name=>({name,done:false})), extraEvents: [], creatorEvents: [], weeklyPlan: {}, coachNotes: [], reminders: true, samplesLoaded: false };
 }
 function loadState() {
   try {
@@ -147,6 +148,8 @@ function loadState() {
     }
     merged.wholeFoodsMeals=(saved?.wholeFoodsMeals||base.wholeFoodsMeals).map(x=>({...x}));
     merged.savedMeals=mergeSavedMeals(saved?.savedMeals, base.savedMeals);
+    merged.creatorEvents=saved?.creatorEvents||base.creatorEvents;
+    merged.weeklyPlan={...base.weeklyPlan,...(saved?.weeklyPlan||{})};
     merged.settings.heightFeet=num(merged.settings.heightFeet,Math.floor(num(merged.settings.height,68)/12));
     merged.settings.heightInches=num(merged.settings.heightInches,num(merged.settings.height,68)%12);
     merged.settings.height=merged.settings.heightFeet*12+merged.settings.heightInches;
@@ -458,7 +461,7 @@ function selectField(label, key, value, choices) {
 function yesNoField(label,key,value) { return selectField(label,key,String(Boolean(value)),[["false","No"],["true","Yes"]]); }
 function completeField(label,key,value) { return selectField(label,key,String(Boolean(value)),[["false","Not complete"],["true","Complete"]]); }
 function noteField(label, key, value = "") {
-  const id = `note-${key}`;
+  const id = `note-${key.replace(/[^a-z0-9_-]/gi,"-")}`;
   return `<label class="full">${label}<div class="note-wrap"><textarea id="${id}" data-field="${key}">${value || ""}</textarea>${mic(id)}</div></label>`;
 }
 function protocolCard() {
@@ -496,6 +499,8 @@ function renderDashboard() {
     <div class="streak-strip">${allStreaks().map(([name,count])=>`<div><strong>${count}</strong><span>${name}</span></div>`).join("")}</div>
     <div class="quick-actions compact-actions"><button data-action="quick-launcher"><span>＋</span>Quick add</button><button data-go="nutrition"><span>◇</span>Meal photo</button><button data-go="workouts"><span>+</span>Workout</button><button data-go="checkins"><span>◎</span>Check-in</button><button data-go="coach"><span>✦</span>Coach</button></div>
     ${protocolCard()}
+    ${bodyRecompDashboard()}
+    ${goalVisualization()}
     <button class="card movement-card" data-go="workouts"><span><span class="eyebrow">TODAY'S MOVEMENT</span><strong>${workout}</strong><small>${log.workoutCompleted ? "Complete. Nice work." : "Tap to open today's exercises"}</small></span><span class="movement-arrow">→</span></button>
     <div class="card event-card-lite"><div><p class="eyebrow">NEXT EVENT</p><h3>${nextEvent.name}</h3><p class="tiny">${formatDate(nextEvent.date)} · ${daysRemaining(nextEvent.date)} days away</p></div><span class="pill">${outlook.pace}</span></div>
     <details class="card"><summary>View deeper progress</summary><div class="detail-body">
@@ -578,7 +583,8 @@ function savedMealsPanel() {
 function macroChips(meal) { return `<div class="chip-row"><span class="meal-chip">${num(meal.calories)} cal</span><span class="meal-chip">${num(meal.protein)}g protein</span><span class="meal-chip">${num(meal.fiber)}g fiber</span><span class="meal-chip">${num(meal.carbs)}g carbs</span><span class="meal-chip">${num(meal.fat)}g fat</span></div>`; }
 function mealChoiceModal(id) {
   const meal=findSavedMeal(id); if(!meal) return toast("Saved meal not found.");
-  modal(`<div class="modal-body"><p class="eyebrow">SAVED MEAL</p><h2>${meal.name}</h2>${macroChips(meal)}<p class="muted">${meal.notes||"No notes yet."}</p>${meal.ingredients?.length?`<div class="chip-row">${meal.ingredients.map(x=>`<span class="tag-chip">${x}</span>`).join("")}</div>`:""}<div class="stack gap" style="margin-top:14px"><button class="button" data-log-as-is="${meal.id}">Log as-is</button><button class="secondary-button" data-customize-meal="${meal.id}">Customize today</button><button class="secondary-button" data-edit-template="${meal.id}">Edit template</button><button class="secondary-button" data-toggle-favorite="${meal.id}">${meal.favorite?"Unmark favorite":"Mark favorite"}</button><button class="danger-button" data-delete-template="${meal.id}">Delete saved meal</button><button class="secondary-button" data-close>Close</button></div></div>`);
+  const variations=(meal.addons||[]).slice(0,4);
+  modal(`<div class="modal-body"><p class="eyebrow">SAVED MEAL</p><h2>${meal.name}</h2>${macroChips(meal)}<p class="muted">${meal.notes||"No notes yet."}</p>${meal.ingredients?.length?`<div class="chip-row">${meal.ingredients.map(x=>`<span class="tag-chip">${x}</span>`).join("")}</div>`:""}${variations.length?`<div class="card compact-card"><p class="eyebrow">FAST VARIATIONS</p><div class="chip-row">${variations.map((x,i)=>`<button class="meal-chip" data-log-variation="${meal.id}" data-variation-index="${i}">+ ${x.name}</button>`).join("")}</div></div>`:""}<div class="stack gap" style="margin-top:14px"><button class="button" data-log-as-is="${meal.id}">Log as-is</button><button class="secondary-button" data-customize-meal="${meal.id}">Customize today</button><button class="secondary-button" data-duplicate-template="${meal.id}">Duplicate meal</button><button class="secondary-button" data-edit-template="${meal.id}">Edit template</button><button class="secondary-button" data-toggle-favorite="${meal.id}">${meal.favorite?"Unmark favorite":"Mark favorite"}</button><button class="danger-button" data-delete-template="${meal.id}">Delete saved meal</button><button class="secondary-button" data-close>Close</button></div></div>`);
 }
 function mealFormFields(meal, prefix="") {
   return `${field("Meal name",`${prefix}name`,meal.name||"","text")}${selectField("Category",`${prefix}category`,meal.category||"breakfast",["breakfast","lunch","dinner","snack","drink"])}${field("Calories",`${prefix}calories`,meal.calories)}${field("Protein g",`${prefix}protein`,meal.protein)}${field("Fiber g",`${prefix}fiber`,meal.fiber)}${field("Carbs g",`${prefix}carbs`,meal.carbs)}${field("Fat g",`${prefix}fat`,meal.fat)}${field("Sodium optional",`${prefix}sodium`,meal.sodium||"")}<label class="full">Ingredients, one per line<textarea data-field="${prefix}ingredients">${(meal.ingredients||[]).join("\n")}</textarea></label><label class="full">Tags, comma separated<textarea data-field="${prefix}tags">${(meal.tags||[]).join(", ")}</textarea></label><label class="full">Notes<textarea data-field="${prefix}notes">${meal.notes||""}</textarea></label><label class="full">Photo optional<input type="file" accept="image/*" capture="environment" data-photo="saved-meal-${meal.id||"new"}"></label>`;
@@ -623,7 +629,11 @@ function groceryPanel() {
 }
 function wholeFoodsPanel() {
   const meals=state.wholeFoodsMeals||[];
-  return `<div class="card hero-card"><p class="eyebrow" style="color:#f7d9d7">WHOLE FOODS LIBRARY</p><h2>Busy-day favorites</h2><p class="muted">Save repeatable meals so busy days need less thought.</p></div><div class="card"><div class="row"><div><p class="eyebrow">SAVED MEALS</p><h3>Tap once to log</h3></div><button class="secondary-button" data-action="wholefoods-meal">+ Save meal</button></div><div class="library-grid">${meals.length?meals.map((m,i)=>`<button class="library-card" data-wholefood-meal="${i}"><span class="library-star">${m.favorite?"★":"☆"}</span><strong>${m.name}</strong><small>${m.calories} cal · ${m.protein}g protein · ${m.fiber}g fiber</small><span>${m.price?`$${m.price} · `:""}${m.rating||"—"}/5</span></button>`).join(""):`<div class="empty">No Whole Foods meals saved yet. Add your first reliable meal prep.</div>`}</div></div>`;
+  return `<div class="card hero-card"><p class="eyebrow" style="color:#f7d9d7">WHOLE FOODS BUILDER 2.0</p><h2>Repeat meals, tiny edits.</h2><p class="muted">Edit, duplicate, delete, or save variations so meal logging stays fast.</p></div><div class="card"><div class="row"><div><p class="eyebrow">SAVED MEALS</p><h3>Tap once to log</h3></div><button class="secondary-button" data-action="wholefoods-meal">+ Save meal</button></div><div class="library-grid">${meals.length?meals.map((m,i)=>`<div class="library-card"><span class="library-star">${m.favorite?"★":"☆"}</span><strong>${m.name}</strong><small>${m.calories} cal · ${m.protein}g protein · ${m.fiber}g fiber</small><span>${m.price?`$${m.price} · `:""}${m.rating||"—"}/5</span><div class="meal-actions"><button class="secondary-button" data-wholefood-meal="${i}">Log</button><button class="secondary-button" data-edit-wholefood="${i}">Edit</button><button class="secondary-button" data-duplicate-wholefood="${i}">Duplicate</button><button class="danger-button" data-delete-wholefood="${i}">Delete</button></div></div>`).join(""):`<div class="empty">No Whole Foods meals saved yet. Add your first reliable meal prep.</div>`}</div></div>`;
+}
+function wholeFoodsFormModal(index=null, duplicate=false) {
+  const meal=index===null?{}:{...(state.wholeFoodsMeals[index]||{})};
+  modal(`<div class="modal-body"><p class="eyebrow">WHOLE FOODS BUILDER</p><h2>${index===null||duplicate?"Save meal prep":"Edit meal prep"}</h2><form id="wholeFoodsForm" data-index="${index??""}" data-duplicate="${duplicate?"yes":"no"}"><div class="form-grid">${field("Meal name","name",duplicate?`${meal.name||""} variation`:meal.name||"","text")}${field("Calories","calories",meal.calories||"")}${field("Protein g","protein",meal.protein||"")}${field("Fiber g","fiber",meal.fiber||"")}${field("Carbs g","carbs",meal.carbs||"")}${field("Fat g","fat",meal.fat||"")}${field("Sodium optional","sodium",meal.sodium||"")}${field("Price optional","price",meal.price||"","number",'step="0.01"')}${field("Rating 1-5","rating",meal.rating||5)}${yesNoField("Favorite","favorite",meal.favorite??true)}${noteField("Meal notes","mealNotes",meal.notes||"")}<label>Meal photo<input type="file" accept="image/*" capture="environment" data-photo="wholefoods-${todayKey()}"></label></div><div class="modal-actions"><button type="button" class="secondary-button" data-close>Cancel</button><button class="button">${index===null||duplicate?"Save and log meal":"Save changes"}</button></div></form></div>`);
 }
 function addMeal(meal) {
   addMealObject({ logId:mealId(), name:meal[0], type:meal[1], category:String(meal[1]||"meal").toLowerCase(), calories:meal[2], protein:meal[3], fiber:meal[4], carbs:meal[5], fat:meal[6], notes:"", rating:5, ingredients:[], tags:[], addons:[] }, {touch:false});
@@ -639,6 +649,7 @@ function renderWorkouts() {
   const exercises=[...WORKOUTS[selected][1],...(state.customExercises[selected]||[])];
   document.querySelector("#workoutContent").innerHTML = `
     <div class="card hero-card"><p class="eyebrow" style="color:#ffe7e7">TODAY · DAY ${currentIndex + 1} OF 7</p><h2>${WORKOUTS[currentIndex][0]}</h2><p class="muted">Open the plan, track the work, then recover.</p></div>
+    ${gymProgression()}
     <div class="split-scroll">${WORKOUTS.map((x,i)=>`<button class="${i===selected?"active":""}" data-workout-day="${i}"><span>Day ${i+1}</span><strong>${x[0]}</strong></button>`).join("")}</div>
     <div class="card"><div class="row"><div><p class="eyebrow">${selected===currentIndex?"TODAY'S WORKOUT":"WORKOUT TEMPLATE"}</p><h3>${WORKOUTS[selected][0]}</h3></div><button class="secondary-button" data-action="add-exercise">+ Exercise</button></div>${exercises.map((x,i)=>{
         const key=`${selected}-${i}`, detail=log.workoutDetails[key]||{}, previous=previousExerciseDetail(key), name=x.split(" · ")[0], prescription=x.split(" · ")[1]||"", change=previous?.weight&&detail.weight?num(detail.weight)-num(previous.weight):0;
@@ -654,6 +665,8 @@ function renderWorkouts() {
 function renderProgress() {
   const logs=trendEntries();
   document.querySelector("#progressContent").innerHTML = `
+    ${bodyRecompDashboard()}
+    ${goalVisualization()}
     <div class="metric-grid">
       <div class="metric"><small>7-day calories</small><strong>${avg(dailyEntries(7),"calories") || "—"}</strong></div>
       <div class="metric"><small>9-day deficit</small><strong>${avg(dailyEntries(9),deficit) || "—"}</strong></div>
@@ -704,17 +717,94 @@ function comparisonRow(label,start,previous,current,unit) {
   const change=current!==undefined&&current!==""?round(num(current)-num(start),2):"—";
   return `<div class="comparison-row"><strong>${label}</strong><span><small>Start</small>${start}${unit}</span><span><small>Previous</small>${previous??"—"}${previous!==undefined?unit:""}</span><span><small>Current</small>${current??"—"}${current!==undefined?unit:""}</span><span class="${num(change)<0?"positive":""}"><small>Total</small>${change==="—"?"—":`${change>0?"+":""}${change}${unit}`}</span></div>`;
 }
+function diffTone(key, diff) {
+  if(Math.abs(num(diff)) < .05) return "neutral";
+  const lowerIsBetter=["weight","bodyFat","waist","hips","chest","arm","thigh"].includes(key);
+  const higherIsBetter=["muscleMass","bodyWater"].includes(key);
+  if((lowerIsBetter && diff < 0) || (higherIsBetter && diff > 0)) return "improving";
+  return "attention";
+}
+function metricDiffCard(label,key,unit="") {
+  const baseline=metricValue(state.baseline,key), current=metricValue(officialSnapshot(),key)||baseline, diff=round(current-baseline,2), tone=diffTone(key,diff);
+  return `<div class="renpho-metric ${tone}"><span>${label}</span><strong>${current||"—"}${unit}</strong><small>Baseline ${baseline||"—"}${unit} · ${diff>0?"+":""}${diff}${unit}</small></div>`;
+}
+function bodyRecompDashboard() {
+  const latest=officialSnapshot(), base=state.baseline;
+  const waist=round(metricValue(latest,"waist")-metricValue(base,"waist"),2);
+  const fat=round(metricValue(latest,"bodyFat")-metricValue(base,"bodyFat"),1);
+  const muscle=round(metricValue(latest,"muscleMass")-metricValue(base,"muscleMass"),1);
+  return `<div class="card os-card"><p class="eyebrow">BODY RECOMP DASHBOARD</p><h2>Shape first, scale second.</h2><div class="os-grid">${[
+    ["Waist Change",`${waist>0?"+":""}${waist} in`,waist<0?"improving":waist===0?"neutral":"attention"],
+    ["Body Fat Change",`${fat>0?"+":""}${fat}%`,fat<0?"improving":fat===0?"neutral":"attention"],
+    ["Muscle Retention",`${muscle>0?"+":""}${muscle} lbs`,muscle>=-.5?"improving":"attention"],
+    ["Transformation Score",`${transformationScore(latest)}/100`,"neutral"]
+  ].map(([label,value,tone])=>`<div class="os-stat ${tone}"><span>${label}</span><strong>${value}</strong></div>`).join("")}</div></div>`;
+}
+function goalVisualization() {
+  const start=num(STARTING_BASELINE.weight), current=num(latestOfficialWeight()), seattle=num(state.settings.seattleGoalWeight,177), blast=num(state.settings.blastFestGoalWeight,168);
+  const bar=(label,goal,date)=>{ const total=Math.max(1,start-goal), progress=clamp(((start-current)/total)*100); return `<div class="goal-bar"><div class="row"><strong>${label}</strong><span class="tiny">${start} → ${goal} lbs · ${formatDate(date)}</span></div><div class="progress"><span style="width:${progress}%"></span></div><p class="tiny">Current ${current} lbs · ${Math.round(progress)}% of scale goal progress</p></div>`; };
+  return `<div class="card os-card"><p class="eyebrow">GOAL VISUALIZATION</p><h3>Connect today to the event dates.</h3><div class="spacer"></div>${bar("Seattle Goal",seattle,state.settings.miniEventDate)}${bar("Blast Fest Goal",blast,state.settings.endDate)}</div>`;
+}
+function renphoImportCenter() {
+  return `<div class="card os-card"><div class="row"><div><p class="eyebrow">RENPHO IMPORT CENTER</p><h2>Official measurement center</h2></div><button class="secondary-button" data-checkin="${nextCheckin()}">Import</button></div><p class="muted">Current, baseline, and difference. Green is improving, champagne is unchanged, orange means watch the trend.</p><div class="renpho-grid">${[
+    ["Weight","weight"," lbs"],["Body Fat","bodyFat","%"],["Waist","waist"," in"],["Hips","hips"," in"],["Chest","chest"," in"],["Arms","arm"," in"],["Thighs","thigh"," in"],["Body Water","bodyWater","%"],["Muscle Mass","muscleMass"," lbs"]
+  ].map(x=>metricDiffCard(...x)).join("")}</div></div>`;
+}
+function photoTimelineCard() {
+  return `<div class="card os-card"><div class="row"><div><p class="eyebrow">PHOTO TIMELINE</p><h2>Transformation gallery</h2></div><span class="pill">LOCAL</span></div><p class="muted">Open each official day for front, side, and back photos. Day 1 comparisons stay available in the check-in view.</p><div class="timeline-grid">${CHECKIN_DAYS.map(day=>`<button class="timeline-card" data-photo-day="${day}"><strong>Day ${day}</strong><span>${formatDate(challengeDate(day))}</span><small>${state.checkins[day]?"Check-in ready":"Add photos"}</small></button>`).join("")}</div></div>`;
+}
+function exerciseNameByKey(key) {
+  const [day,index]=String(key).split("-").map(num);
+  return (WORKOUTS[day]?.[1]?.[index] || state.customExercises?.[day]?.[index-WORKOUTS[day]?.[1]?.length] || key).split(" · ")[0];
+}
+function gymProgression() {
+  const rows={};
+  dailyEntries(60).forEach(entry=>Object.entries(entry.workoutDetails||{}).forEach(([key,detail])=>{
+    if(!num(detail.weight)) return;
+    const name=exerciseNameByKey(key); rows[name] ||= [];
+    rows[name].push({date:entry.date, weight:num(detail.weight)});
+  }));
+  const focus=["Hip thrusts","Romanian deadlifts","Squats or leg press","Glute kickbacks","Lat pulldown","Seated row"];
+  const cards=[...new Set([...focus,...Object.keys(rows)])].slice(0,8).map(name=>{
+    const logs=rows[name]||[], first=logs[0], prev=logs.at(-2), current=logs.at(-1), best=logs.reduce((m,x)=>Math.max(m,x.weight),0), change=current&&first?current.weight-first.weight:0;
+    return `<div class="progression-card"><span>${name}</span><strong>${current?`${current.weight} lbs`:"Not logged"}</strong><small>Best ${best||"—"} · Previous ${prev?.weight||"—"} · ${change>0?"↑":change<0?"↓":"→"} ${Math.abs(change)} lbs since Day 1</small>${current&&current.weight>=best?`<b>Personal record</b>`:""}</div>`;
+  }).join("");
+  return `<div class="card os-card"><p class="eyebrow">GYM PROGRESSION CENTER</p><h2>Strength is part of the glow-up.</h2><div class="progression-grid">${cards}</div></div>`;
+}
+function weeklyPlanningCard() {
+  const p=state.weeklyPlan||{};
+  return `<div class="card os-card"><p class="eyebrow">SUNDAY PLANNING</p><h2>Weekly setup ritual</h2><p class="muted">Meals, groceries, workouts, school, appointments, and events in one calm setup note.</p><div class="form-grid">${["meals","groceries","workouts","school","appointments","events"].map(key=>noteField(key[0].toUpperCase()+key.slice(1),`weeklyPlan.${key}`,p[key]||"")).join("")}</div></div>`;
+}
+function creatorModeCard() {
+  return `<div class="card os-card"><div class="row"><div><p class="eyebrow">CONTENT CREATOR MODE</p><h2>Optional life events</h2></div><button class="secondary-button" data-action="add-creator-event">+ Event</button></div><p class="muted">Photoshoots, brand deals, trips, content goals, and campaign deadlines.</p>${(state.creatorEvents||[]).length?state.creatorEvents.map((x,i)=>`<div class="checkin-item row"><div><strong>${x.name}</strong><div class="tiny">${formatDate(x.date)} · ${daysRemaining(x.date)} days · ${x.notes||""}</div></div><button class="secondary-button" data-remove-creator="${i}">Remove</button></div>`).join(""):`<div class="empty">No creator events yet. Add Seattle, Chicago, campaigns, or photoshoot dates when useful.</div>`}</div>`;
+}
+function finalReportText() {
+  const latest=officialSnapshot(), base=STARTING_BASELINE, ach=achievements().filter(x=>x[1]).map(x=>x[0]).join(", ") || "Baseline started";
+  return `Kenna's Day 45 Transformation Report
+Starting Weight: ${base.weight} lbs
+Current Weight: ${metricValue(latest,"weight")||"—"} lbs
+Weight Lost: ${round(metricValue(latest,"weight")-base.weight,1)} lbs
+Body Fat Change: ${round(metricValue(latest,"bodyFat")-base.bodyFat,1)}%
+Waist Change: ${round(metricValue(latest,"waist")-base.waist,2)} in
+Transformation Score: ${transformationScore(latest)}/100
+Best Streak: ${allStreaks().sort((a,b)=>b[1]-a[1])[0].join(" ")}
+Achievements: ${ach}
+Summary: Keep muscle, reduce body fat, protect consistency, and compare official check-ins only.`;
+}
 
 function renderCheckins() {
   const current=getDayNumber(), completed=officialCheckins(), latest=completed.at(-1), previous=completed.at(-2), baseline=state.baseline, insights=checkinInsights(latest||baseline), transform=transformationScore(latest||baseline);
   document.querySelector("#checkinContent").innerHTML = `
     <div class="card hero-card"><p class="eyebrow" style="color:#f7d9d7">EDITORIAL WELLNESS REPORT</p><h2>Your official glow-up log</h2><p class="muted">Check in every nine days. Observe the pattern without letting scale noise run the day.</p></div>
+    ${bodyRecompDashboard()}
+    ${renphoImportCenter()}
     <div class="card"><div class="row"><div><p class="eyebrow">TRANSFORMATION SCORE</p><h3>${transform}/100</h3></div><div class="ring micro-ring" style="--value:${transform}" data-label="${transform}"></div></div><p class="muted">This score weights body fat, waist, abdomen, weight, muscle mass, protein, and steps. Day 1 starts at 62.</p></div>
     ${onTrackCard()}
     <div class="card"><div class="row"><div><p class="eyebrow">STARTING BASELINE</p><h3>June 2 official RENPHO + tape</h3></div><span class="pill">DAY 1</span></div><div class="baseline-grid">${[["Weight",baseline.weight,"lbs"],["Body fat",baseline.bodyFat,"%"],["Skeletal muscle",baseline.skeletalMuscle,"%"],["Muscle mass",baseline.muscleMass,"lbs"],["Fat-free mass",baseline.fatFreeMass,"lbs"],["Visceral fat",baseline.visceralFat,""],["Subcutaneous",baseline.subcutaneousFat,"%"],["Body water",baseline.bodyWater,"%"],["Protein",baseline.proteinPercent,"%"],["BMR",baseline.bmr,""],["Metabolic age",baseline.metabolicAge,""],["Waist",baseline.waist,"in"],["Abdomen",baseline.abdomen,"in"],["Hip",baseline.hips,"in"]].map(([label,value,unit])=>`<div><small>${label}</small><strong>${value}${unit}</strong></div>`).join("")}</div></div>
     <div class="card"><div class="row"><div><p class="eyebrow">WHAT CHANGED?</p><h3>Starting · previous · current</h3></div><span class="pill">OFFICIAL ONLY</span></div>${comparisonRow("Weight",baseline.weight,previous?.weight,latest?.weight,"lbs")}${comparisonRow("Body fat",baseline.bodyFat,previous?.bodyFat,latest?.bodyFat,"%")}${comparisonRow("Muscle mass",baseline.muscleMass,previous?.muscleMass,latest?.muscleMass,"lbs")}${comparisonRow("Waist",baseline.waist,previous?.waist,latest?.waist,"in")}${comparisonRow("Abdomen",baseline.abdomen,previous?.abdomen,latest?.abdomen,"in")}${comparisonRow("Hip",baseline.hips,previous?.hips,latest?.hips,"in")}</div>
     <div class="card"><div class="row"><div><p class="eyebrow">AUTO REVIEW</p><h3>Wins + warnings</h3></div><span class="pill">COACH</span></div><div class="grid-2"><div class="feedback"><strong>Wins</strong>${insights.wins.map(x=>`<p class="tiny">✓ ${x}</p>`).join("")}</div><div class="feedback"><strong>Warnings</strong>${insights.warnings.map(x=>`<p class="tiny">○ ${x}</p>`).join("")}</div></div></div>
     <div class="card"><div class="row"><div><p class="eyebrow">PHOTO PROGRESS</p><h3>Compare your official photos</h3></div><span class="pill">STAYS LOCAL</span></div><p class="muted">See Day 1 beside a later official check-in. Photos never leave this browser.</p><div class="action-row">${CHECKIN_DAYS.slice(1).map(day=>`<button class="secondary-button" data-photo-compare="${day}">Day 1 vs ${day}</button>`).join("")}</div></div>
+    ${photoTimelineCard()}
     <div class="card"><p>Official check-ins are the only weights used for trends. Daily scale noise is not the assignment.</p><div class="spacer"></div><button class="secondary-button" data-action="random-weight">Log a private random weigh-in</button></div>
     <div class="card"><h3>Official schedule</h3>${CHECKIN_DAYS.map(day=>`<div class="checkin-item row"><div><strong>Day ${day} · ${formatDate(challengeDate(day))}</strong><div class="tiny">${state.checkins[day]?.weight ? `${state.checkins[day].weight} lbs · waist ${state.checkins[day].waist || "—"}` : day===current ? "Your official check-in is ready." : "Not logged yet"}</div></div><button class="secondary-button" data-checkin="${day}">${state.checkins[day]?"Edit":"Open"}</button></div>`).join("")}</div>
     <div class="card"><h3>Private random weigh-ins</h3>${state.randomWeights.length ? state.randomWeights.map(x=>`<div class="checkin-item row"><span>${formatDate(x.date)}</span><strong>${x.weight} lbs</strong></div>`).join("") : `<div class="empty">None logged. This is intentionally not the main focus.</div>`}</div>
@@ -766,12 +856,15 @@ function renderCoach() {
   document.querySelector("#coachContent").innerHTML = `
     <div class="card hero-card"><p class="eyebrow" style="color:#ffe7e7">AI COACH</p><h2>Get clear feedback.</h2><p class="muted">Paste a clean summary into ChatGPT when you want help adjusting the plan.</p></div>
     <div class="card priority-card"><p class="eyebrow">ONE PRIORITY</p><h3>${priority.title}</h3><p class="muted">${priority.body}</p><p class="tiny">${priority.recommendation}</p></div>
+    ${weeklyPlanningCard()}
+    ${creatorModeCard()}
     <div class="card"><p class="eyebrow">SUNDAY REVIEW</p><h3>Weekly coach notes</h3><div class="review-list">${review.wins.map(x=>`<p>✓ ${x}</p>`).join("")}</div><div class="feedback"><strong>Biggest bottleneck</strong><br>${review.bottleneck}</div><div class="spacer"></div><p class="tiny"><strong>Focus this week:</strong> ${review.focus}</p><div class="spacer"></div><button class="button" data-action="copy-weekly-report">Copy Weekly Report</button></div>
     <div class="card"><p class="eyebrow">EXPORT FOR CHATGPT</p><div class="stack"><button class="button" data-action="copy-export">Export For ChatGPT</button><button class="quick-add" data-action="copy-daily-summary"><strong>Copy Daily Summary</strong><br><span class="tiny">Use for a quick same-day adjustment.</span></button><button class="quick-add" data-action="copy-summary"><strong>Copy 9-Day Summary</strong><br><span class="tiny">Use for a deeper progress review.</span></button><button class="quick-add" data-action="copy-photo-prompt"><strong>Copy Meal Photo Prompt</strong><br><span class="tiny">Attach a meal photo in ChatGPT and estimate the macros.</span></button></div></div>
     <div class="coach-note"><p class="eyebrow">COACHING PROMPT</p><p style="margin-top:5px">Paste this into ChatGPT when you want feedback. Ask for your top three priorities and one thing to simplify.</p></div>
     <div class="card"><p class="eyebrow">SAVE COACH FEEDBACK</p><h3>Keep advice you want to revisit</h3><textarea id="coachFeedback" placeholder="Paste useful coach feedback here..."></textarea><div class="spacer"></div><button class="button" data-action="save-coach-note">Save coach note</button></div>
     <div class="card"><p class="eyebrow">SAVED COACH NOTES</p>${(state.coachNotes||[]).length?state.coachNotes.map(x=>`<div class="coach-note"><span class="tiny">${formatDate(x.date)}</span><p>${x.text}</p></div>`).join(""):`<div class="empty">No saved coach notes yet.</div>`}</div>
     <div class="card"><p class="eyebrow">FORECAST SNAPSHOT</p><p><strong>${outlook.estimated} lbs</strong> estimated for Blast Fest · ${outlook.pace.toLowerCase()}.</p><p class="tiny">Forecasts are estimates, not promises. Official check-ins and consistent logs make them more useful.</p></div>
+    <div class="card os-card"><p class="eyebrow">DAY 45 TRANSFORMATION REPORT</p><h2>Transformation scrapbook</h2><p class="muted">Generate the final report with starting/current stats, achievements, best streak, and photo context. Use your browser print dialog to save as PDF.</p><div class="spacer"></div><button class="button" data-action="final-report">Generate Final Report</button></div>
   `;
 }
 function chatGPTExport() {
@@ -824,12 +917,13 @@ function renderSettings() {
     <div class="card"><p class="eyebrow">CHALLENGE SETTINGS</p><h3>Dates and events</h3><div class="spacer"></div><div class="form-grid">${field("Start date","settings.startDate",s.startDate,"date")}${field("Final event date","settings.endDate",s.endDate,"date")}${field("Final event name","settings.eventName",s.eventName,"text")}${field("Seattle concert date","settings.miniEventDate",s.miniEventDate,"date")}${field("Seattle concert name","settings.miniEventName",s.miniEventName,"text")}</div><div class="spacer"></div>${(state.extraEvents||[]).map((x,i)=>`<div class="checkin-item row"><div><strong>${x.name}</strong><div class="tiny">${formatDate(x.date)}${x.notes?` · ${x.notes}`:""}</div></div><button class="secondary-button" data-remove-event="${i}">Remove</button></div>`).join("")}<button class="secondary-button" data-action="add-event">+ Add another event</button></div>
     <div class="card"><p class="eyebrow">USER PROFILE</p><h3>Your goals</h3><div class="spacer"></div><div class="form-grid">
       ${field("Name","settings.name",s.name,"text")}${field("Age","settings.age",s.age)}${field("Height feet","settings.heightFeet",s.heightFeet)}${field("Height inches","settings.heightInches",s.heightInches)}${field("Official start weight","settings.startWeight",s.startWeight,"number",'step="0.1"')}
-      ${field("Goal weight","settings.goalWeight",s.goalWeight,"number",'step="0.1"')}${selectField("Activity level","settings.activity",s.activity,["sedentary","light","moderate","active"])}${selectField("Goal intensity","settings.intensity",s.intensity,["moderate","aggressive"])}
+      ${field("Goal weight","settings.goalWeight",s.goalWeight,"number",'step="0.1"')}${field("Seattle goal weight","settings.seattleGoalWeight",s.seattleGoalWeight,"number",'step="0.1"')}${field("Blast Fest goal weight","settings.blastFestGoalWeight",s.blastFestGoalWeight,"number",'step="0.1"')}${selectField("Activity level","settings.activity",s.activity,["sedentary","light","moderate","active"])}${selectField("Goal intensity","settings.intensity",s.intensity,["moderate","aggressive"])}
       ${field("Water goal oz","settings.waterGoal",s.waterGoal)}${field("Protein goal g","settings.proteinGoal",s.proteinGoal)}${field("Fiber goal g","settings.fiberGoal",s.fiberGoal)}${field("Step goal","settings.stepGoal",s.stepGoal)}${field("Calorie target","settings.calorieTarget",s.calorieTarget)}${field("Deficit target","settings.deficitTarget",s.deficitTarget)}
     </div><p class="tiny">Height display: ${s.heightFeet}′${s.heightInches}″</p></div>
     <div class="card"><p class="eyebrow">PERMANENT BASELINE</p><h3>Your June 2 RENPHO + tape snapshot</h3><p class="muted">These values anchor every official comparison.</p><div class="spacer"></div><div class="form-grid">${field("Weight","baseline.weight",state.baseline.weight,"number",'step="0.1"')}${field("Body fat %","baseline.bodyFat",state.baseline.bodyFat,"number",'step="0.1"')}${field("Skeletal muscle %","baseline.skeletalMuscle",state.baseline.skeletalMuscle,"number",'step="0.1"')}${field("Muscle mass lbs","baseline.muscleMass",state.baseline.muscleMass,"number",'step="0.1"')}${field("Fat-free mass lbs","baseline.fatFreeMass",state.baseline.fatFreeMass,"number",'step="0.1"')}${field("Visceral fat","baseline.visceralFat",state.baseline.visceralFat)}${field("Subcutaneous fat %","baseline.subcutaneousFat",state.baseline.subcutaneousFat,"number",'step="0.1"')}${field("Body water %","baseline.bodyWater",state.baseline.bodyWater,"number",'step="0.1"')}${field("Protein %","baseline.proteinPercent",state.baseline.proteinPercent,"number",'step="0.1"')}${field("BMR","baseline.bmr",state.baseline.bmr)}${field("Metabolic age","baseline.metabolicAge",state.baseline.metabolicAge)}${field("Waist","baseline.waist",state.baseline.waist,"number",'step="0.01"')}${field("Abdomen","baseline.abdomen",state.baseline.abdomen,"number",'step="0.01"')}${field("Hip","baseline.hips",state.baseline.hips,"number",'step="0.01"')}</div></div>
     <div class="card"><h3>TDEE calculator</h3><div class="spacer"></div><div class="grid-2"><div><span class="tiny">BMR</span><strong>${bmr()} cal</strong></div><div><span class="tiny">Maintenance</span><strong>${tdee()} cal</strong></div><div><span class="tiny">Moderate target</span><strong>${tdee()-500} cal</strong></div><div><span class="tiny">Aggressive target</span><strong>${Math.max(1200,tdee()-750)} cal</strong></div></div><div class="spacer"></div>${s.calorieTarget<1200?'<div class="feedback">Your target is too low for this tracker. Choose a more sustainable calorie target and seek professional guidance for personalized needs.</div>':'<p class="tiny">Recommended targets avoid extreme starvation calories. Individual needs vary.</p>'}</div>
     <div class="card"><h3>Routine-based reminders</h3><p class="muted">${routineToday()[2].join(" · ")}</p><div class="spacer"></div><button class="secondary-button" data-action="notifications">Enable optional browser reminders</button></div>
+    ${creatorModeCard()}
     <div class="card"><h3>Starter data</h3><p class="muted">Load sample days to preview charts, or clear all tracker data when you are ready for a fresh start.</p><div class="spacer"></div><div class="row wrap"><button class="secondary-button" data-action="samples">Load sample data</button><button class="danger-button" data-action="clear-data">Clear all data</button></div></div>
     <div class="card"><p class="eyebrow">SAFETY NOTE</p><p>This tracker supports wellness and consistency. It is not medical advice. If you experience dizziness, fainting, extreme fatigue, severe constipation, chest pain, disordered eating symptoms, or worsening health symptoms, seek medical guidance.</p></div>
     <div class="card"><p class="tiny">All tracker data stays on this device in your browser. Version 1 stores simple data in localStorage and photos in IndexedDB when available.</p></div>
@@ -860,7 +954,7 @@ function coerce(input) {
 }
 
 document.addEventListener("click", e => {
-  const nav=e.target.closest("[data-nav]"), goButton=e.target.closest("[data-go]"), quickMeal=e.target.closest("[data-quick-meal]"), savedMeal=e.target.closest("[data-saved-meal]"), logAsIs=e.target.closest("[data-log-as-is]"), customizeMeal=e.target.closest("[data-customize-meal]"), editTemplate=e.target.closest("[data-edit-template]"), toggleFavorite=e.target.closest("[data-toggle-favorite]"), deleteTemplate=e.target.closest("[data-delete-template]"), confirmDeleteTemplate=e.target.closest("[data-confirm-delete-template]"), editLoggedMeal=e.target.closest("[data-edit-logged-meal]"), libraryMeal=e.target.closest("[data-wholefood-meal]"), removeMeal=e.target.closest("[data-remove-meal]"), checkin=e.target.closest("[data-checkin]"), photoCompare=e.target.closest("[data-photo-compare]"), microphone=e.target.closest("[data-mic]"), action=e.target.closest("[data-action]"), tab=e.target.closest("[data-nutrition-tab]"), grocery=e.target.closest("[data-grocery]"), workout=e.target.closest("[data-workout-day]"), calendar=e.target.closest("[data-calendar-day]"), removeEvent=e.target.closest("[data-remove-event]");
+  const nav=e.target.closest("[data-nav]"), goButton=e.target.closest("[data-go]"), quickMeal=e.target.closest("[data-quick-meal]"), savedMeal=e.target.closest("[data-saved-meal]"), logAsIs=e.target.closest("[data-log-as-is]"), customizeMeal=e.target.closest("[data-customize-meal]"), editTemplate=e.target.closest("[data-edit-template]"), duplicateTemplate=e.target.closest("[data-duplicate-template]"), logVariation=e.target.closest("[data-log-variation]"), toggleFavorite=e.target.closest("[data-toggle-favorite]"), deleteTemplate=e.target.closest("[data-delete-template]"), confirmDeleteTemplate=e.target.closest("[data-confirm-delete-template]"), editLoggedMeal=e.target.closest("[data-edit-logged-meal]"), libraryMeal=e.target.closest("[data-wholefood-meal]"), editWholeFood=e.target.closest("[data-edit-wholefood]"), duplicateWholeFood=e.target.closest("[data-duplicate-wholefood]"), deleteWholeFood=e.target.closest("[data-delete-wholefood]"), removeMeal=e.target.closest("[data-remove-meal]"), checkin=e.target.closest("[data-checkin]"), photoCompare=e.target.closest("[data-photo-compare]"), photoDay=e.target.closest("[data-photo-day]"), microphone=e.target.closest("[data-mic]"), action=e.target.closest("[data-action]"), tab=e.target.closest("[data-nutrition-tab]"), grocery=e.target.closest("[data-grocery]"), workout=e.target.closest("[data-workout-day]"), calendar=e.target.closest("[data-calendar-day]"), removeEvent=e.target.closest("[data-remove-event]"), removeCreator=e.target.closest("[data-remove-creator]");
   if(nav) go(nav.dataset.nav); if(goButton) go(goButton.dataset.go);
   if(e.target.matches("[data-close]")) document.querySelector("#modal").close();
   if(e.target.matches("[data-habit]")) { dayLog().habits[e.target.dataset.habit]=e.target.checked; saveState(); render(); }
@@ -868,16 +962,22 @@ document.addEventListener("click", e => {
   if(quickMeal) addMeal(QUICK_MEALS[num(quickMeal.dataset.quickMeal)]);
   if(savedMeal) mealChoiceModal(savedMeal.dataset.savedMeal);
   if(logAsIs) { const m=findSavedMeal(logAsIs.dataset.logAsIs); if(m){ addMealObject(loggedMealFromTemplate(m)); document.querySelector("#modal").close(); } }
+  if(logVariation) { const m=findSavedMeal(logVariation.dataset.logVariation), addon=m?.addons?.[num(logVariation.dataset.variationIndex)]; if(m&&addon){ const meal=loggedMealFromTemplate(m,{name:`${m.name} + ${addon.name}`, addons:[addon], ingredients:[...(m.ingredients||[]), addon.name]}); ["calories","protein","fiber","carbs","fat"].forEach(k=>meal[k]=num(meal[k])+num(addon[k])); addMealObject(meal); document.querySelector("#modal").close(); } }
   if(customizeMeal) customizeMealModal(customizeMeal.dataset.customizeMeal);
   if(editTemplate) templateFormModal(editTemplate.dataset.editTemplate);
+  if(duplicateTemplate) { const m=findSavedMeal(duplicateTemplate.dataset.duplicateTemplate); if(m){ state.savedMeals.push({...cloneMealTemplate(m), id:mealId(), name:`${m.name} variation`, favorite:false, useCount:0, lastUsed:""}); saveState(); document.querySelector("#modal").close(); toast("Meal duplicated"); render(); } }
   if(toggleFavorite) { const m=findSavedMeal(toggleFavorite.dataset.toggleFavorite); if(m){ m.favorite=!m.favorite; saveState(); mealChoiceModal(m.id); renderNutrition(); } }
   if(deleteTemplate) { const m=findSavedMeal(deleteTemplate.dataset.deleteTemplate); if(m) modal(`<div class="modal-body"><p class="eyebrow">DELETE SAVED MEAL</p><h2>${m.name}</h2><p>Delete this saved meal? This will not delete meals already logged in your history.</p><div class="modal-actions"><button class="secondary-button" data-close>Cancel</button><button class="danger-button" data-confirm-delete-template="${m.id}">Delete</button></div></div>`); }
   if(confirmDeleteTemplate) { state.savedMeals=state.savedMeals.filter(x=>x.id!==confirmDeleteTemplate.dataset.confirmDeleteTemplate); saveState(); document.querySelector("#modal").close(); toast("Saved meal deleted. History is unchanged."); render(); }
   if(editLoggedMeal) customizeMealModal("", "logged", editLoggedMeal.dataset.editLoggedMeal);
   if(libraryMeal) { const m=state.wholeFoodsMeals[num(libraryMeal.dataset.wholefoodMeal)]; addMeal([m.name,"Meal prep",m.calories,m.protein,m.fiber,m.carbs,m.fat]); }
+  if(editWholeFood) wholeFoodsFormModal(num(editWholeFood.dataset.editWholefood));
+  if(duplicateWholeFood) wholeFoodsFormModal(num(duplicateWholeFood.dataset.duplicateWholefood), true);
+  if(deleteWholeFood) { state.wholeFoodsMeals.splice(num(deleteWholeFood.dataset.deleteWholefood),1); saveState(); renderNutrition(); toast("Whole Foods meal deleted"); }
   if(removeMeal) { const log=dayLog(); log.meals.splice(num(removeMeal.dataset.removeMeal),1); recalcMealTotals(log); saveState(); render(); }
   if(checkin) checkinModal(num(checkin.dataset.checkin));
   if(photoCompare) showPhotoComparison(num(photoCompare.dataset.photoCompare));
+  if(photoDay) showPhotoDay(num(photoDay.dataset.photoDay));
   if(microphone) startDictation(microphone.dataset.mic);
   if(action) handleAction(action.dataset.action);
   if(tab) { nutritionTab=tab.dataset.nutritionTab; renderNutrition(); }
@@ -885,14 +985,15 @@ document.addEventListener("click", e => {
   if(workout) { workoutDay=num(workout.dataset.workoutDay); renderWorkouts(); }
   if(calendar) openDayModal(calendar.dataset.calendarDay);
   if(removeEvent) { state.extraEvents.splice(num(removeEvent.dataset.removeEvent),1); saveState(); renderSettings(); }
+  if(removeCreator) { state.creatorEvents.splice(num(removeCreator.dataset.removeCreator),1); saveState(); render(); }
 });
 document.addEventListener("change", e => {
   if(e.target.closest("#mealBuilderForm")) updateMealBuilderEstimate();
   if(e.target.matches("[data-field]")) {
-    if(e.target.closest("#savedMealForm,#mealBuilderForm,#customMealForm,#wholeFoodsForm,#randomWeightForm,#eventForm,#groceryForm,#exerciseForm,#checkinForm")) return;
+    if(e.target.closest("#savedMealForm,#mealBuilderForm,#customMealForm,#wholeFoodsForm,#randomWeightForm,#eventForm,#creatorEventForm,#groceryForm,#exerciseForm,#checkinForm")) return;
     const key=e.target.dataset.field, value=coerce(e.target);
     if(key.startsWith("settings.")) { setDeep(state,key,value); state.settings.height=num(state.settings.heightFeet)*12+num(state.settings.heightInches); }
-    else if(key.startsWith("baseline.")) setDeep(state,key,value);
+    else if(key.startsWith("baseline.") || key.startsWith("weeklyPlan.")) setDeep(state,key,value);
     else if(key.includes(".")) setDeep(dayLog(),key,value); else dayLog()[key]=value;
     saveState(); render();
   }
@@ -945,9 +1046,12 @@ function handleAction(action) {
   if(action==="fresh-start") modal(`<div class="modal-body"><p class="eyebrow">START FRESH</p><h2>Begin your real tracker on June 2?</h2><p>This clears preview logs, fake trends, completed samples, meals, and check-ins. Your templates and goals stay ready.</p><div class="modal-actions"><button class="secondary-button" data-close>Cancel</button><button class="button" data-action="confirm-fresh-start">Start my real tracker</button></div></div>`);
   if(action==="confirm-fresh-start") { state=createDefaultState(); saveState(); document.querySelector("#modal").close(); toast("Clean slate ready. Day 1 starts June 2."); render(); }
   if(action==="add-event") modal(`<div class="modal-body"><p class="eyebrow">EXTRA EVENT</p><h2>Add a milestone</h2><form id="eventForm"><div class="form-grid">${field("Event name","eventName","","text")}${field("Event date","eventDate","","date")}${noteField("Goal or notes","eventNotes","")}</div><div class="modal-actions"><button type="button" class="secondary-button" data-close>Cancel</button><button class="button">Save event</button></div></form></div>`);
+  if(action==="add-creator-event") modal(`<div class="modal-body"><p class="eyebrow">CREATOR MODE</p><h2>Add content milestone</h2><form id="creatorEventForm"><div class="form-grid">${field("Event name","creatorName","","text")}${field("Event date","creatorDate","","date")}${noteField("Content goal or notes","creatorNotes","")}</div><div class="modal-actions"><button type="button" class="secondary-button" data-close>Cancel</button><button class="button">Save creator event</button></div></form></div>`);
   if(action==="add-grocery") modal(`<div class="modal-body"><h2>Add grocery item</h2><form id="groceryForm">${field("Item name","groceryName","","text")}<div class="modal-actions"><button type="button" class="secondary-button" data-close>Cancel</button><button class="button">Add item</button></div></form></div>`);
-  if(action==="wholefoods-meal") modal(`<div class="modal-body"><p class="eyebrow">WHOLE FOODS LIBRARY</p><h2>Save meal prep</h2><form id="wholeFoodsForm"><div class="form-grid">${field("Meal name","name","","text")}${field("Calories","calories","")}${field("Protein g","protein","")}${field("Fiber g","fiber","")}${field("Carbs g","carbs","")}${field("Fat g","fat","")}${field("Sodium optional","sodium","")}${field("Price optional","price","","number",'step="0.01"')}${field("Rating 1-5","rating","5")}${yesNoField("Favorite","favorite",true)}${noteField("Meal notes","mealNotes","")}<label>Meal photo<input type="file" accept="image/*" capture="environment" data-photo="wholefoods-${todayKey()}"></label></div><div class="modal-actions"><button type="button" class="secondary-button" data-close>Cancel</button><button class="button">Save and log meal</button></div></form></div>`);
+  if(action==="wholefoods-meal") wholeFoodsFormModal();
   if(action==="add-exercise") modal(`<div class="modal-body"><h2>Add exercise</h2><form id="exerciseForm">${field("Exercise name","exerciseName","","text")}<div class="modal-actions"><button type="button" class="secondary-button" data-close>Cancel</button><button class="button">Add exercise</button></div></form></div>`);
+  if(action==="final-report") finalReportModal();
+  if(action==="print-report") window.print();
   if(action==="clear-data") modal(`<div class="modal-body"><h2>Clear all local data?</h2><p>This removes daily logs, meals, check-ins, private weigh-ins, and settings from this browser.</p><div class="modal-actions"><button class="secondary-button" data-close>Cancel</button><button class="danger-button" data-action="confirm-clear">Clear everything</button></div></div>`);
   if(action==="confirm-clear") { localStorage.removeItem(STORAGE_KEY); state=createDefaultState(); saveState(); document.querySelector("#modal").close(); toast("Tracker cleared"); render(); }
 }
@@ -958,7 +1062,8 @@ document.addEventListener("submit",e=>{
   if(e.target.id==="randomWeightForm"){e.preventDefault();state.randomWeights.push({date:todayKey(),weight:num(e.target.querySelector("[data-field=privateWeight]").value)});saveState();document.querySelector("#modal").close();toast("Stored privately");render();}
   if(e.target.id==="eventForm"){e.preventDefault();const inputs=e.target.querySelectorAll("[data-field]");const data={};inputs.forEach(x=>data[x.dataset.field]=coerce(x));if(!data.eventDate)return toast("Add a date for this milestone.");state.extraEvents.push({name:data.eventName||"Extra event",date:data.eventDate,notes:data.eventNotes});saveState();document.querySelector("#modal").close();toast("Event added");renderSettings();}
   if(e.target.id==="groceryForm"){e.preventDefault();const name=e.target.querySelector("[data-field=groceryName]").value.trim();if(name)state.groceries.push({name,done:false});saveState();document.querySelector("#modal").close();renderNutrition();}
-  if(e.target.id==="wholeFoodsForm"){e.preventDefault();const d={};e.target.querySelectorAll("[data-field]").forEach(x=>d[x.dataset.field]=coerce(x));const meal={name:d.name||"Whole Foods meal prep",calories:num(d.calories),protein:num(d.protein),fiber:num(d.fiber),carbs:num(d.carbs),fat:num(d.fat),sodium:d.sodium,price:d.price,notes:d.mealNotes,rating:num(d.rating,5),favorite:Boolean(d.favorite)};state.wholeFoodsMeals.push(meal);saveState();addMeal([meal.name,"Meal prep",meal.calories,meal.protein,meal.fiber,meal.carbs,meal.fat]);document.querySelector("#modal").close();}
+  if(e.target.id==="wholeFoodsForm"){e.preventDefault();const d={};e.target.querySelectorAll("[data-field]").forEach(x=>d[x.dataset.field]=coerce(x));const meal={name:d.name||"Whole Foods meal prep",calories:num(d.calories),protein:num(d.protein),fiber:num(d.fiber),carbs:num(d.carbs),fat:num(d.fat),sodium:d.sodium,price:d.price,notes:d.mealNotes,rating:num(d.rating,5),favorite:Boolean(d.favorite)};const index=e.target.dataset.index===""?null:num(e.target.dataset.index), duplicate=e.target.dataset.duplicate==="yes"; if(index!==null&&!duplicate){state.wholeFoodsMeals[index]=meal;toast("Whole Foods meal updated");} else {state.wholeFoodsMeals.push(meal);addMeal([meal.name,"Meal prep",meal.calories,meal.protein,meal.fiber,meal.carbs,meal.fat]);toast("Whole Foods variation saved");} saveState();document.querySelector("#modal").close();render();}
+  if(e.target.id==="creatorEventForm"){e.preventDefault();const data={};e.target.querySelectorAll("[data-field]").forEach(x=>data[x.dataset.field]=coerce(x));if(!data.creatorDate)return toast("Add a date for this creator milestone.");state.creatorEvents.push({name:data.creatorName||"Content milestone",date:data.creatorDate,notes:data.creatorNotes});saveState();document.querySelector("#modal").close();toast("Creator event saved");render();}
   if(e.target.id==="exerciseForm"){e.preventDefault();const name=e.target.querySelector("[data-field=exerciseName]").value.trim();const selected=workoutDay===null?workoutIndex():workoutDay;if(name)(state.customExercises[selected]||=[]).push(name);saveState();document.querySelector("#modal").close();renderWorkouts();}
 });
 function openDayModal(date) { const log=state.daily[date], day=daysBetween(state.settings.startDate,date)+1; modal(`<div class="modal-body"><p class="eyebrow">${day<=45?`DAY ${day}`:"BLAST FEST BUFFER"} · ${formatDate(date)}</p><h2>${log&&hasLogData(log)?"Logged day":"No log yet"}</h2>${log&&hasLogData(log)?`<div class="compare-grid"><div class="compare-card"><span class="tiny">Water</span><strong>${num(log.water)} oz</strong></div><div class="compare-card"><span class="tiny">Protein</span><strong>${num(log.protein)}g</strong></div><div class="compare-card"><span class="tiny">Steps</span><strong>${num(log.steps)}</strong></div><div class="compare-card"><span class="tiny">Score</span><strong>${score(log)}</strong></div></div><p class="muted">${log.notes||"No notes added."}</p>`:`<p class="muted">Nothing logged for this date yet.</p>`}<div class="modal-actions"><button class="secondary-button" data-close>Close</button></div></div>`); }
@@ -968,7 +1073,7 @@ function startDictation(fieldId) {
   if(!SpeechRecognition) return toast("Speech-to-text is not supported in this browser.");
   const recognition=new SpeechRecognition(); recognition.lang="en-US"; recognition.interimResults=false;
   recognition.onstart=()=>toast("Listening…");
-  recognition.onresult=event=>{const target=document.querySelector(`#${fieldId}`);if(target){target.value=`${target.value} ${event.results[0][0].transcript}`.trim();target.dispatchEvent(new Event("change",{bubbles:true}));}};
+  recognition.onresult=event=>{const target=document.getElementById(fieldId);if(target){target.value=`${target.value} ${event.results[0][0].transcript}`.trim();target.dispatchEvent(new Event("change",{bubbles:true}));}};
   recognition.onerror=()=>toast("I could not capture that. Try again."); recognition.start();
 }
 function requestNotifications() {
@@ -992,6 +1097,16 @@ async function showPhotoComparison(day) {
   const poses=["front","side","back"], container=document.querySelector("#photoComparison");
   const photos=await Promise.all(poses.map(async pose=>[pose,await getPhoto(`checkin-1-${pose}`),await getPhoto(`checkin-${day}-${pose}`)]));
   container.innerHTML=photos.map(([pose,start,current])=>`<div class="photo-compare-card"><p class="eyebrow">${pose.toUpperCase()}</p>${start&&current?`<div class="photo-compare" style="--reveal:50%"><img src="${URL.createObjectURL(start)}" alt="Day 1 ${pose}"><div class="photo-after"><img src="${URL.createObjectURL(current)}" alt="Day ${day} ${pose}"></div></div><input type="range" min="0" max="100" value="50" aria-label="${pose} photo comparison slider" data-compare-slider>`:`<div class="empty">Add both Day 1 and Day ${day} ${pose} photos to compare.</div>`}</div>`).join("");
+}
+async function showPhotoDay(day) {
+  modal(`<div class="modal-body"><p class="eyebrow">PHOTO TIMELINE</p><h2>Day ${day}</h2><div id="photoDayGallery" class="photo-gallery"><div class="empty">Loading local photos…</div></div><div class="modal-actions"><button class="secondary-button" data-close>Close</button></div></div>`);
+  const poses=["front","side","back"], container=document.querySelector("#photoDayGallery");
+  const photos=await Promise.all(poses.map(async pose=>[pose,await getPhoto(`checkin-${day}-${pose}`)]));
+  container.innerHTML=photos.map(([pose,file])=>`<div class="photo-tile"><p class="eyebrow">${pose.toUpperCase()}</p>${file?`<img src="${URL.createObjectURL(file)}" alt="Day ${day} ${pose} photo">`:`<div class="empty">No ${pose} photo yet.</div>`}</div>`).join("");
+}
+async function finalReportModal() {
+  const report=finalReportText();
+  modal(`<div class="modal-body final-report"><p class="eyebrow">DAY 45 REPORT</p><h2>Kenna's Transformation Scrapbook</h2><pre>${report}</pre>${photoTimelineCard()}<div class="modal-actions"><button class="secondary-button" data-close>Close</button><button class="button" data-action="print-report">Export as PDF</button></div></div>`);
 }
 document.addEventListener("input",e=>{ if(e.target.matches("[data-compare-slider]")) e.target.previousElementSibling.style.setProperty("--reveal",`${e.target.value}%`); });
 function loadSamples() {
