@@ -94,6 +94,16 @@ Phase 2.1 makes the app calmer and more personal for daily use:
 - Settings now includes export/import JSON backups with a clear note that browser data does not automatically sync between phone and computer.
 - Progress is grouped into official check-in trends, daily habit trends, nutrition/gut trends, workout trends, and forecast, with clean empty states when there is not enough real data yet.
 
+## Phase 6.2 Cognitive Load + Workflow Refinement
+
+- Dashboard now answers “what do I need to do next?” first: greeting, motivation, Day X of 45, events, yesterday recap/backfill, today plan, top priorities, quick actions, movement, coach insight, then goal visualization.
+- Body recomp metrics moved off the Dashboard and into the Progress Transformation Hub because RENPHO and tape metrics update every 9 days, not daily.
+- Workout screen was rebuilt as a simple Workout Library. Kenna can open any workout in any order, log sets/reps/weight/notes, then mark the workout complete.
+- Today’s Movement opens the recommended workout instead of marking anything complete automatically.
+- Progress now acts as the Transformation Hub: current stats, change since Day 1, official check-ins, photos, trend charts, forecast, and Transformation Score.
+- Daily checklist reminders show current progress and remaining amount so they feel actionable instead of like paperwork.
+- Home shows one Coach Insight only, keeping the daily flow focused.
+
 ## Features
 
 - Smart Morning Dashboard with event countdowns, Top 3 priorities, Today's Score, streaks, quick actions, positive Day 1 messaging, and gentle backfill prompts

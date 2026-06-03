@@ -144,6 +144,8 @@ details[open] summary::after { content:"−"; }
 .day { border:0; }
 .day small { display:block; font-size:8px; opacity:.7; }
 .empty { padding: 16px 0; color: var(--muted); text-align: center; }
+.empty-state { text-align:left; }
+.empty-state h3 { color:var(--rose-dark); font-size:18px; }
 .photo-preview { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 12px; background: var(--pink-wash); }
 .hidden { display: none !important; }
 
@@ -243,6 +245,15 @@ details[open] summary::after { content:"−"; }
 .import-label { display:inline-flex; align-items:center; justify-content:center; cursor:pointer; }
 .calendar .runway { border-style:dashed; opacity:.82; }
 .calendar .runway span { font-size:12px; }
+.coach-insight-card { border-color:rgba(188,148,94,.22); background:linear-gradient(145deg,rgba(255,253,250,.94),rgba(232,212,173,.22)); }
+.workout-library-card { background:linear-gradient(145deg,rgba(255,253,250,.93),rgba(247,226,224,.55)); }
+.workout-library { display:grid; gap:10px; margin-top:14px; }
+.workout-library button { display:grid; gap:3px; width:100%; min-height:74px; padding:15px; border:1px solid var(--line); border-radius:21px; color:var(--ink); text-align:left; background:rgba(255,255,255,.68); box-shadow:0 8px 18px rgba(91,55,61,.045); }
+.workout-library button.active { color:white; background:linear-gradient(135deg,var(--rose-dark),var(--rose)); }
+.workout-library button span,.workout-library button small { color:var(--muted); font-size:10px; font-weight:800; text-transform:uppercase; letter-spacing:.55px; }
+.workout-library button.active span,.workout-library button.active small { color:rgba(255,255,255,.78); }
+.workout-library button strong { font-size:16px; }
+.workout-detail-card { border-color:rgba(188,148,94,.22); }
 .streak-strip { display:grid; grid-template-columns:repeat(5,1fr); gap:7px; margin:12px 0; }
 .streak-strip div { display:grid; min-height:64px; place-items:center; padding:9px 4px; border:1px solid rgba(255,255,255,.7); border-radius:18px; background:rgba(255,253,250,.72); box-shadow:0 8px 20px rgba(91,55,61,.05); }
 .streak-strip strong { color:var(--rose-dark); font-family:var(--font-display); font-size:25px; line-height:1; }

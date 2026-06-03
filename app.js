@@ -476,6 +476,19 @@ function timeAwareCoach(log=dayLog()) {
   if(hour<22) return type.includes("Clinical") ? "Clinical evening: protein before shift, hydration during shift, and a recovery check-in when you can." : "Evening plan: dinner, steps finish, full check-in, and night routine.";
   return "Late night: hydrate, log what you remember, protect sleep, and set tomorrow up gently.";
 }
+function smartCoachInsight(log=dayLog()) {
+  const proteinLeft=Math.max(0,num(state.settings.proteinGoal)-num(log.protein));
+  const waterLeft=Math.max(0,num(state.settings.waterGoal)-num(log.water));
+  const stepsLeft=Math.max(0,num(state.settings.stepGoal)-num(log.steps));
+  if(proteinLeft>0) return `You need ${proteinLeft}g more protein. Log the next meal around that first.`;
+  if(waterLeft>0) return `You're close on protein. Add ${waterLeft} oz water next.`;
+  if(stepsLeft>0) {
+    const minutes=Math.max(10,Math.ceil(stepsLeft/110));
+    return `A ${minutes}-minute walk would put your steps back on track.`;
+  }
+  if(!habitMet(log,"workout")) return "Choose today's workout and mark it complete only after logging it.";
+  return "You're on pace. Keep the next choice simple and close the day with a check-in.";
+}
 function checkinReminderCard() {
   const [type]=routineToday();
   const copy=type.includes("Clinical") ? "Clinical day check-in can happen late. Log the basics, hydrate, then protect recovery." : type==="Class Day" ? "Class day check-in: after dinner or evening steps, do the full review while it is fresh." : "Night check-in: close the day with the basics and one note.";
@@ -517,8 +530,8 @@ function listCard(title, items) {
 }
 
 function renderDashboard() {
-  const log = dayLog(), check = nextCheckin();
-  const workout = WORKOUTS[workoutIndex()][0], outlook=forecast(), review=weeklyReview(), priority=smartPriority(), transform=transformationScore(), simpleScore=dailyScore(log);
+  const log = dayLog();
+  const workout = WORKOUTS[workoutIndex()][0], outlook=forecast(), simpleScore=dailyScore(log);
   const events=[{name:state.settings.miniEventName,date:state.settings.miniEventDate},{name:state.settings.eventName,date:state.settings.endDate},...(state.extraEvents||[])].filter(x=>x.date>=todayKey()).sort((a,b)=>a.date.localeCompare(b.date));
   const nextEvent=events[0]||{name:state.settings.eventName,date:state.settings.endDate};
   const priorities=topPriorities(log), routine=routineBrief(), runway=eventRunwayDay();
@@ -536,7 +549,7 @@ function renderDashboard() {
       <div class="hero-day-row"><strong>Day ${getDayNumber()} of ${challengeLength()}</strong><span>${daysRemaining(state.settings.miniEventDate)} days to Seattle</span><span>${daysRemaining(state.settings.endDate)} days to Blast Fest</span></div>
       ${runway?`<div class="recovery-note">Event runway: ${runway} day${runway===1?"":"s"} after the 45-day challenge.</div>`:""}
     </div>
-    <div class="card event-card-lite"><div><p class="eyebrow">NEXT EVENT</p><h3>${nextEvent.name}</h3><p class="tiny">${formatDate(nextEvent.date)} · ${daysRemaining(nextEvent.date)} days away</p></div><span class="pill">${outlook.confidence}</span></div>
+    <div class="card event-card-lite"><div><p class="eyebrow">NEXT EVENT</p><h3>${nextEvent.name}</h3><p class="tiny">${formatDate(nextEvent.date)} · ${daysRemaining(nextEvent.date)} days away</p><div class="mini-metrics"><span>Seattle: ${daysRemaining(state.settings.miniEventDate)} days</span><span>Blast Fest: ${daysRemaining(state.settings.endDate)} days</span></div></div><span class="pill">${outlook.confidence}</span></div>
     ${yesterdayRecapCard()}
     <div class="card plan-card"><p class="eyebrow">PLAN FOR TODAY</p><h3>${timeAwareCoach(log)}</h3><p class="tiny">${routine.note}</p></div>
     <div class="card priority-card morning-card">
@@ -547,22 +560,10 @@ function renderDashboard() {
       <div class="priority-card-list">${priorities.map(priorityCard).join("")}</div>
       <p class="tiny">Score: protein 30 · steps 20 · water 20 · workout 20 · check-in 10</p>
     </div>
-    <div class="streak-strip">${allStreaks().map(([name,count])=>`<div><strong>${count}</strong><span>${name}</span></div>`).join("")}</div>
     <div class="quick-actions compact-actions"><button data-action="quick-launcher"><span>＋</span>Quick add</button><button data-go="nutrition"><span>◇</span>Meal photo</button><button data-go="workouts"><span>+</span>Workout</button><button data-go="checkins"><span>◎</span>Check-in</button><button data-go="coach"><span>✦</span>Coach</button></div>
-    ${protocolCard()}
-    ${bodyRecompDashboard()}
+    <button class="card movement-card" data-action="open-recommended-workout"><span><span class="eyebrow">TODAY'S MOVEMENT</span><strong>${workout}</strong><small>${log.workoutCompleted ? "Complete. Nice work." : "Tap to open today's workout"}</small></span><span class="movement-arrow">→</span></button>
+    <div class="card coach-insight-card"><p class="eyebrow">COACH INSIGHT</p><h3>${smartCoachInsight(log)}</h3><p class="tiny">${new Date().getHours()>=17 ? "Evening flow: use Full Check-In when the day is mostly done." : "Daytime flow: Quick Log is enough for now."}</p></div>
     ${goalVisualization()}
-    <button class="card movement-card" data-go="workouts"><span><span class="eyebrow">TODAY'S MOVEMENT</span><strong>${workout}</strong><small>${log.workoutCompleted ? "Complete. Nice work." : "Tap to open today's exercises"}</small></span><span class="movement-arrow">→</span></button>
-    ${checkinReminderCard()}
-    <details class="card"><summary>View deeper progress</summary><div class="detail-body">
-      <div class="card forecast-card compact-card"><div class="row"><div><p class="eyebrow">FORECAST</p><h3>${outlook.estimated} lbs by ${formatDate(state.settings.endDate)}</h3></div><span class="pill">${outlook.pace}</span></div><p class="tiny">${outlook.recommendation}</p></div>
-      ${onTrackCard()}
-      <div class="card compact-card"><div class="row"><div><p class="eyebrow">TRANSFORMATION SCORE</p><h3>${transform}/100</h3></div><div class="ring micro-ring" style="--value:${transform}" data-label="${transform}"></div></div></div>
-      <div class="card compact-card"><p class="eyebrow">WEEKLY PROGRESS</p><h3>${review.logs.length ? "Protect the rhythm" : "Your transformation starts here"}</h3><p class="muted">${priority.body}</p></div>
-      <div class="action-row"><button class="secondary-button" data-go="progress">Progress</button><button class="secondary-button" data-go="coach">Weekly report</button><button class="secondary-button" data-go="settings">Settings</button></div>
-    </div></details>
-    <details class="card"><summary>Today's routine</summary><div class="detail-body">${routineCard()}${events.map(x=>`<p class="tiny">○ ${formatDate(x.date)} · ${x.name}</p>`).join("")}<button class="secondary-button" data-action="notifications">Browser reminders</button></div></details>
-    <div class="card"><div class="row"><div><p class="eyebrow">ADHD-FRIENDLY RESET</p><h3>Fell off today?</h3></div><button class="danger-button" data-action="reset">Emergency reset</button></div></div>
   `;
 }
 function calorieSummary() {
@@ -578,7 +579,10 @@ function renderToday() {
     ["proteinGoal","Protein goal",num(log.protein),num(state.settings.proteinGoal),"g","quick-protein"],
     ["fiberGoal","Fiber goal",num(log.fiber),num(state.settings.fiberGoal),"g","quick-log"],
     ["stepGoal","Steps",num(log.steps),num(state.settings.stepGoal),"","quick-steps"]
-  ].map(([key,label,current,goal,unit,action])=>`<div class="habit progress-habit"><label><input type="checkbox" data-habit="${key}" ${current>=goal || log.habits[key] ? "checked" : ""}><span>${label}: ${current.toLocaleString()} / ${goal.toLocaleString()}${unit}</span></label><button class="secondary-button" data-action="${action}">Log</button></div>`).join("");
+  ].map(([key,label,current,goal,unit,action])=>{
+    const remaining=Math.max(0,goal-current);
+    return `<div class="habit progress-habit"><label><input type="checkbox" data-habit="${key}" ${current>=goal || log.habits[key] ? "checked" : ""}><span><strong>${label}</strong><small>${current.toLocaleString()} / ${goal.toLocaleString()}${unit} · ${remaining.toLocaleString()}${unit} remaining</small></span></label><button class="secondary-button" data-action="${action}">Log</button></div>`;
+  }).join("");
   const habitHTML = HABITS.filter(([key])=>!["waterGoal","proteinGoal","fiberGoal","stepGoal"].includes(key)).map(([key, label]) => `<label class="habit"><input type="checkbox" data-habit="${key}" ${log.habits[key] ? "checked" : ""}><span>${label}</span></label>`).join("");
   document.querySelector("#todayContent").innerHTML = `
     <div class="card"><div class="row"><div><p class="eyebrow">DAY ${getDayNumber()} MISSION</p><h3>${todayFocus(log)}</h3></div><div class="ring soft-ring" style="--value:${dailyScore(log)}" data-label="${dailyScore(log)}"></div></div><p class="tiny">Today's Score uses only the daily basics: protein, steps, water, workout, and check-in.</p></div>
@@ -599,6 +603,7 @@ function renderToday() {
     </div><div class="spacer"></div><button class="secondary-button" data-mic="note-notes">🎤 Talk check-in</button><p class="tiny">Speak naturally. Your transcript saves as a note. Version 1 uses manual Apple Health entry.</p></div>
     ${feedbackHTML(log)}
     ${checkinReminderCard()}
+    <div class="card"><div class="row"><div><p class="eyebrow">ADHD-FRIENDLY RESET</p><h3>Fell off today?</h3></div><button class="danger-button" data-action="reset">Emergency reset</button></div></div>
   `;
 }
 
@@ -709,36 +714,39 @@ function renderGut() {
 }
 
 function renderWorkouts() {
-  const log = dayLog(), currentIndex = workoutIndex(), selected=workoutDay===null?currentIndex:workoutDay;
+  const log = dayLog(), currentIndex = workoutIndex(), selected=workoutDay;
   log.workoutDetails ||= {}; state.customExercises ||= {};
-  const exercises=[...WORKOUTS[selected][1],...(state.customExercises[selected]||[])];
+  const recommended=WORKOUTS[currentIndex][0];
+  const openDetail=selected!==null && WORKOUTS[selected];
+  const exercises=openDetail ? [...WORKOUTS[selected][1],...(state.customExercises[selected]||[])] : [];
   document.querySelector("#workoutContent").innerHTML = `
-    <div class="card hero-card"><p class="eyebrow" style="color:#ffe7e7">TODAY · DAY ${currentIndex + 1} OF 7</p><h2>${WORKOUTS[currentIndex][0]}</h2><p class="muted">Open the plan, track the work, then recover.</p></div>
-    ${gymProgression()}
-    <div class="split-scroll">${WORKOUTS.map((x,i)=>`<button class="${i===selected?"active":""}" data-workout-day="${i}"><span>Day ${i+1}</span><strong>${x[0]}</strong></button>`).join("")}</div>
-    <div class="card"><div class="row"><div><p class="eyebrow">${selected===currentIndex?"TODAY'S WORKOUT":"WORKOUT TEMPLATE"}</p><h3>${WORKOUTS[selected][0]}</h3></div><button class="secondary-button" data-action="add-exercise">+ Exercise</button></div>${exercises.map((x,i)=>{
+    <div class="card hero-card"><p class="eyebrow" style="color:#ffe7e7">WORKOUT LIBRARY</p><h2>Choose today's movement.</h2><p class="muted">Recommended: ${recommended}. The split is a guide, not a rule.</p></div>
+    ${log.workoutCompleted ? `<div class="card"><p class="eyebrow">TODAY'S STATUS</p><h3>Workout complete.</h3><p class="tiny">${log.workoutName||"Movement logged"} · nice work.</p></div>` : `<div class="empty-state card"><h3>No workout logged today.</h3><p class="muted">Choose today's workout, log what you did, then mark it complete.</p></div>`}
+    <div class="card workout-library-card"><div class="row"><div><p class="eyebrow">AVAILABLE WORKOUTS</p><h3>Open one plan</h3></div><span class="pill">Flexible order</span></div><div class="workout-library">${WORKOUTS.map((x,i)=>`<button class="${i===selected?"active":""}" data-workout-day="${i}"><span>${i===currentIndex?"Recommended today":"Workout option"}</span><strong>${x[0]}</strong><small>${x[1].length} moves</small></button>`).join("")}</div></div>
+    ${openDetail ? `<div class="card workout-detail-card"><div class="row"><div><p class="eyebrow">${selected===currentIndex?"RECOMMENDED TODAY":"FLEXIBLE WORKOUT"}</p><h3>${WORKOUTS[selected][0]}</h3></div><button class="secondary-button" data-action="add-exercise">+ Exercise</button></div>${exercises.map((x,i)=>{
         const key=`${selected}-${i}`, detail=log.workoutDetails[key]||{}, previous=previousExerciseDetail(key), name=x.split(" · ")[0], prescription=x.split(" · ")[1]||"", change=previous?.weight&&detail.weight?num(detail.weight)-num(previous.weight):0;
         return `<div class="exercise-card"><label class="habit"><input type="checkbox" data-exercise="${key}" ${log.exercises?.[key] ? "checked" : ""}><span><strong>${name}</strong><small>${prescription}</small></span></label>${previous?.weight?`<div class="overload-note"><span>Last: ${previous.weight} lbs</span><b>${detail.weight?`${change>=0?"↑":"↓"} ${Math.abs(change)} lbs`:"Add today's weight"}</b></div>`:""}<div class="exercise-grid">${field("Sets",`workoutDetails.${key}.sets`,detail.sets)}${field("Reps",`workoutDetails.${key}.reps`,detail.reps)}${field("Weight lbs",`workoutDetails.${key}.weight`,detail.weight)}${field("Notes",`workoutDetails.${key}.notes`,detail.notes,"text")}</div></div>`;
       }).join("")}
       <div class="spacer"></div><div class="form-grid">${completeField("Workout","workoutCompleted",log.workoutCompleted)}${completeField("Cardio","cardio",log.cardio)}</div>
       <div class="spacer"></div>${noteField("Workout notes","workoutNotes",log.workoutNotes)}
     </div>
-    <div class="card"><p class="eyebrow">CARDIO FINISHER</p><h3>Optional movement log</h3><div class="form-grid">${selectField("Type","cardioType",log.cardioType||"Treadmill walk",["Treadmill walk","Incline walk","Run / walk intervals","Outdoor walk","Steps finish"])}${field("Duration minutes","cardioMinutes",log.cardioMinutes)}${field("Distance miles","distance",log.distance,"number",'step="0.1"')}${field("Calories if known","cardioCalories",log.cardioCalories)}${completeField("Completed","cardio",log.cardio)}</div></div>
+    <div class="card"><p class="eyebrow">CARDIO</p><h3>Optional finisher</h3><div class="form-grid">${selectField("Type","cardioType",log.cardioType||"Treadmill walk",["Treadmill walk","Incline walk","Run / walk intervals","Outdoor walk","Steps finish"])}${field("Duration minutes","cardioMinutes",log.cardioMinutes)}${field("Distance miles","distance",log.distance,"number",'step="0.1"')}${field("Calories if known","cardioCalories",log.cardioCalories)}${completeField("Completed","cardio",log.cardio)}</div></div>` : ""}
   `;
 }
 
 function renderProgress() {
   const logs=trendEntries();
+  const latest=officialSnapshot(), base=state.baseline;
+  const stat=(label,key,unit="")=>`<div class="metric"><small>${label}</small><strong>${metricValue(latest,key)||metricValue(base,key)||"—"}${unit}</strong></div>`;
   document.querySelector("#progressContent").innerHTML = `
-    ${bodyRecompDashboard()}
-    ${goalVisualization()}
-    <div class="card"><p class="eyebrow">PROGRESS OVERVIEW</p><div class="metric-grid">
-      <div class="metric"><small>7-day calories</small><strong>${avg(dailyEntries(7),"calories") || "—"}</strong></div>
-      <div class="metric"><small>9-day deficit</small><strong>${avg(dailyEntries(9),deficit) || "—"}</strong></div>
-      <div class="metric"><small>Check-in streak</small><strong>${habitStreak("checkin")}</strong></div>
-      <div class="metric"><small>Current cycle</small><strong>${Math.ceil(getDayNumber()/9)}</strong></div>
+    <div class="card hero-card"><p class="eyebrow" style="color:#f7d9d7">TRANSFORMATION HUB</p><h2>How Kenna is changing.</h2><p class="muted">Official check-ins, photos, trends, and forecasts live here so Home can stay focused on today.</p></div>
+    <div class="progress-section"><p class="eyebrow">A. CURRENT STATS</p><div class="metric-grid">
+      ${stat("Weight","weight"," lbs")}${stat("Body Fat","bodyFat","%")}${stat("Muscle Mass","muscleMass"," lbs")}${stat("Body Water","bodyWater","%")}${stat("Waist","waist"," in")}${stat("Abdomen","abdomen"," in")}${stat("Hips","hips"," in")}
     </div></div>
-    <div class="progress-section"><p class="eyebrow">OFFICIAL CHECK-IN TRENDS</p>
+    <div class="progress-section"><p class="eyebrow">B. CHANGE SINCE DAY 1</p>${bodyRecompDashboard()}${renphoImportCenter()}</div>
+    <div class="progress-section"><p class="eyebrow">C. OFFICIAL CHECK-INS</p><div class="card"><h3>Every 9 days only</h3>${CHECKIN_DAYS.map(day=>`<div class="checkin-item row"><div><strong>Day ${day} · ${formatDate(challengeDate(day))}</strong><div class="tiny">${state.checkins[day]?.weight ? `${state.checkins[day].weight} lbs · body fat ${state.checkins[day].bodyFat || "—"}% · waist ${state.checkins[day].waist || "—"}` : day===9 ? "Your first comparison check-in is Day 9." : "Not logged yet"}</div></div><button class="secondary-button" data-checkin="${day}">${state.checkins[day]?"Edit":"Open"}</button></div>`).join("")}</div></div>
+    <div class="progress-section"><p class="eyebrow">D. PROGRESS PHOTOS</p>${photoTimelineCard()}</div>
+    <div class="progress-section"><p class="eyebrow">E. TREND CHARTS</p>
       ${chartCard("Official weight trend", CHECKIN_DAYS.map(day => ({ label:`D${day}`, value:num(state.checkins[day]?.weight) })).filter(x=>x.value), "Official weigh-ins only. Private random weigh-ins never change this chart.")}
       ${chartCard("Official transformation score", CHECKIN_DAYS.map(day => state.checkins[day] ? ({ label:`D${day}`, value:transformationScore({day,...state.checkins[day]}) }) : null).filter(Boolean), "Body recomp score from official metrics plus protein and steps.")}
       ${chartCard("Body fat trend", CHECKIN_DAYS.map(day => ({ label:`D${day}`, value:num(state.checkins[day]?.bodyFat) })).filter(x=>x.value))}
@@ -746,14 +754,10 @@ function renderProgress() {
       ${chartCard("Abdomen trend", CHECKIN_DAYS.map(day => ({ label:`D${day}`, value:num(state.checkins[day]?.abdomen) })).filter(x=>x.value))}
       ${chartCard("Muscle mass trend", CHECKIN_DAYS.map(day => ({ label:`D${day}`, value:num(state.checkins[day]?.muscleMass) })).filter(x=>x.value))}
       ${chartCard("Body water trend", CHECKIN_DAYS.map(day => ({ label:`D${day}`, value:metricValue(state.checkins[day],"bodyWater") })).filter(x=>x.value))}
-    </div>
-    <div class="progress-section"><p class="eyebrow">DAILY HABIT TRENDS</p>
       ${chartCard("Today's Score", logs.map(x=>({label:formatDate(x.date),value:dailyScore(x)})), "Protein, steps, water, workout, and check-in.")}
       ${chartCard("Water", logs.map(x=>({label:formatDate(x.date),value:num(x.water)})).filter(x=>x.value))}
       ${chartCard("Steps", logs.map(x=>({label:formatDate(x.date),value:num(x.steps)})).filter(x=>x.value))}
       ${chartCard("Sleep", logs.map(x=>({label:formatDate(x.date),value:num(x.sleep)})).filter(x=>x.value))}
-    </div>
-    <div class="progress-section"><p class="eyebrow">NUTRITION + GUT TRENDS</p>
       ${chartCard("Calories consumed", logs.map(x=>({label:formatDate(x.date),value:num(x.calories)})).filter(x=>x.value))}
       ${chartCard("Average calorie deficit", logs.map(x=>({label:formatDate(x.date),value:deficit(x)})).filter(x=>x.value))}
       ${chartCard("Protein", logs.map(x=>({label:formatDate(x.date),value:num(x.protein)})).filter(x=>x.value))}
@@ -762,14 +766,14 @@ function renderProgress() {
       ${chartCard("Constipation", logs.map(x=>({label:formatDate(x.date),value:num(x.constipation)})).filter(x=>x.value))}
       ${chartCard("Gut Health Score", logs.map(x=>({label:formatDate(x.date),value:gutScore(x)})))}
     </div>
-    <div class="progress-section"><p class="eyebrow">WORKOUT TRENDS</p>${gymProgression()}</div>
-    <div class="progress-section"><p class="eyebrow">FORECAST</p>${onTrackCard()}</div>
+    <div class="progress-section"><p class="eyebrow">F. FORECAST</p>${onTrackCard()}</div>
+    <div class="progress-section"><p class="eyebrow">G. TRANSFORMATION SCORE</p><div class="card"><div class="row"><div><h3>${transformationScore(latest)}/100</h3><p class="muted">This updates meaningfully when official check-ins update.</p></div><div class="ring micro-ring" style="--value:${transformationScore(latest)}" data-label="${transformationScore(latest)}"></div></div></div></div>
     <div class="card"><h3>Challenge calendar</h3><p class="tiny">Tap any day to view its log. Gold dots mark official check-ins. Official Day 45 is your final measurement, with Blast Fest shown as the final countdown day.</p><div class="spacer"></div>${calendarHTML()}</div>
     <div class="card"><h3>Achievements</h3><div class="achievement-grid">${badgesHTML()}</div></div>
   `;
 }
 function chartCard(title, data, note = "") {
-  return `<div class="card"><h3>${title}</h3>${note ? `<p class="tiny">${note}</p>` : ""}${data.length ? lineChart(data) : `<div class="empty">No trends yet. Your first trend will appear after your first few logs.</div>`}</div>`;
+  return `<div class="card"><h3>${title}</h3>${note ? `<p class="tiny">${note}</p>` : ""}${data.length ? lineChart(data) : `<div class="empty">No trends yet. Your first trend will appear after a few real logs or official check-ins.</div>`}</div>`;
 }
 function lineChart(data) {
   const width=500,height=150,pad=18, vals=data.map(x=>x.value), min=Math.min(...vals), max=Math.max(...vals), range=max-min || 1;
@@ -1030,7 +1034,8 @@ function coerce(input) {
 
 document.addEventListener("click", e => {
   const nav=e.target.closest("[data-nav]"), goButton=e.target.closest("[data-go]"), quickMeal=e.target.closest("[data-quick-meal]"), savedMeal=e.target.closest("[data-saved-meal]"), logAsIs=e.target.closest("[data-log-as-is]"), customizeMeal=e.target.closest("[data-customize-meal]"), editTemplate=e.target.closest("[data-edit-template]"), duplicateTemplate=e.target.closest("[data-duplicate-template]"), logVariation=e.target.closest("[data-log-variation]"), toggleFavorite=e.target.closest("[data-toggle-favorite]"), deleteTemplate=e.target.closest("[data-delete-template]"), confirmDeleteTemplate=e.target.closest("[data-confirm-delete-template]"), editLoggedMeal=e.target.closest("[data-edit-logged-meal]"), libraryMeal=e.target.closest("[data-wholefood-meal]"), editWholeFood=e.target.closest("[data-edit-wholefood]"), duplicateWholeFood=e.target.closest("[data-duplicate-wholefood]"), deleteWholeFood=e.target.closest("[data-delete-wholefood]"), removeMeal=e.target.closest("[data-remove-meal]"), checkin=e.target.closest("[data-checkin]"), photoCompare=e.target.closest("[data-photo-compare]"), photoDay=e.target.closest("[data-photo-day]"), microphone=e.target.closest("[data-mic]"), action=e.target.closest("[data-action]"), tab=e.target.closest("[data-nutrition-tab]"), grocery=e.target.closest("[data-grocery]"), workout=e.target.closest("[data-workout-day]"), calendar=e.target.closest("[data-calendar-day]"), removeEvent=e.target.closest("[data-remove-event]"), removeCreator=e.target.closest("[data-remove-creator]");
-  if(nav) go(nav.dataset.nav); if(goButton) go(goButton.dataset.go);
+  if(nav) { if(nav.dataset.nav==="workouts") workoutDay=null; go(nav.dataset.nav); }
+  if(goButton) { if(goButton.dataset.go==="workouts") workoutDay=null; go(goButton.dataset.go); }
   if(e.target.matches("[data-close]")) document.querySelector("#modal").close();
   if(e.target.matches("[data-habit]")) { dayLog().habits[e.target.dataset.habit]=e.target.checked; saveState(); render(); }
   if(e.target.matches("[data-exercise]")) { dayLog().exercises[e.target.dataset.exercise]=e.target.checked; saveState(); render(); }
@@ -1069,7 +1074,10 @@ document.addEventListener("change", e => {
     const key=e.target.dataset.field, value=coerce(e.target);
     if(key.startsWith("settings.")) { setDeep(state,key,value); state.settings.height=num(state.settings.heightFeet)*12+num(state.settings.heightInches); }
     else if(key.startsWith("baseline.") || key.startsWith("weeklyPlan.")) setDeep(state,key,value);
-    else if(key.includes(".")) setDeep(dayLog(),key,value); else dayLog()[key]=value;
+    else if(key.includes(".")) setDeep(dayLog(),key,value); else {
+      dayLog()[key]=value;
+      if(key==="workoutCompleted" && value && workoutDay!==null) dayLog().workoutName=WORKOUTS[workoutDay]?.[0] || "Workout";
+    }
     saveState(); render();
   }
   if(e.target.matches("[data-photo]") && e.target.files[0]) storePhoto(e.target.dataset.photo,e.target.files[0]);
@@ -1143,6 +1151,7 @@ function handleAction(action) {
   if(action==="manual-protein") manualProteinModal();
   if(action==="quick-steps") quickAmountModal("steps");
   if(action==="quick-workout") { workoutDay=workoutIndex(); go("workouts"); document.querySelector("#modal")?.close(); }
+  if(action==="open-recommended-workout") { workoutDay=workoutIndex(); go("workouts"); }
   if(action.startsWith("water-add-")) addToLog("water",action.split("-").at(-1));
   if(action.startsWith("steps-add-")) addToLog("steps",action.split("-").at(-1));
   if(action==="save-water-amount") addToLog("water",num(document.querySelector("#quickAmount")?.value));
