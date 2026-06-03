@@ -83,9 +83,20 @@ Phase 2.1 makes the app calmer and more personal for daily use:
 - Content Creator Mode tracks optional photoshoots, brand deadlines, trips, campaign goals, and future milestones.
 - Day 45 Transformation Report generates a printable scrapbook-style report that can be saved as a PDF from the browser print dialog.
 
+## Phase 6.1 Real Day 1 UX Fixes
+
+- Home now shows **Day 1 of 45** with Seattle and Blast Fest countdowns separated from the challenge count.
+- The morning dashboard opens with a positive affirmation, a next-event card, yesterday recap/backfill, today’s plan, and functional Top 3 priority cards.
+- Quick logging now lets Kenna choose water and step amounts, log meals first for protein, manually add protein grams only when needed, and open today’s workout instead of marking it complete too early.
+- Today’s checklist shows live goal progress, such as `Water goal: 40 / 100 oz`, and links each priority to the related logging flow.
+- Nutrition + Gut now shows meals logged today before saved meals, supports one-time restaurant/random meal logging, and includes a meal photo plus nutrition-label workflow with a ChatGPT estimate prompt.
+- Forecasts use safety guardrails. Before Day 9, the app labels projections as planning estimates and explains that accuracy improves after the first official comparison.
+- Settings now includes export/import JSON backups with a clear note that browser data does not automatically sync between phone and computer.
+- Progress is grouped into official check-in trends, daily habit trends, nutrition/gut trends, workout trends, and forecast, with clean empty states when there is not enough real data yet.
+
 ## Features
 
-- Smart Morning Dashboard with event countdowns, Top 3 priorities, Today's Score, streaks, quick actions, and missed-day recovery
+- Smart Morning Dashboard with event countdowns, Top 3 priorities, Today's Score, streaks, quick actions, positive Day 1 messaging, and gentle backfill prompts
 - Daily checklist with quick mode, full check-in, manual Apple Health fields, voice dictation, and emergency reset
 - Meal tracking with one-tap Whole Foods-style meals, custom meals, nutrition totals, and local meal photos
 - Gut health tracker for water, fiber, vegetables, kefir, probiotics, bowel movements, bloating, constipation, stress, and sleep
@@ -122,6 +133,8 @@ All paths are relative, so the PWA works from a GitHub Pages project subdirector
 ## Data Storage
 
 Daily logs, settings, meals, check-ins, and private weigh-ins are stored in `localStorage`. Photos are stored in IndexedDB when the browser supports it. Data remains on the current device and browser profile.
+
+Use **Settings > Export backup JSON** and **Settings > Import backup JSON** to manually move data between devices or browser profiles. Data entered on a phone will not automatically appear on a computer until a future cloud sync feature exists.
 
 New trackers start clean. Existing preview data can be removed with **Settings > Clear Sample Data + Start My Real Tracker**. Use **Settings > Clear all data** to remove all local tracker data. Clearing browser site data also removes it.
 

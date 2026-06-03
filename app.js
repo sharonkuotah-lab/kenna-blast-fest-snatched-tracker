@@ -93,12 +93,12 @@ const ROUTINES = {
 };
 const pageTitles = { dashboard:"Dashboard", today:"Today", nutrition:"Nutrition + Gut", gut:"Gut Health", workouts:"Workouts", progress:"Progress", checkins:"Check-Ins", coach:"AI Coach", settings:"Settings" };
 const QUICK_LOG_ACTIONS = [
-  ["Water", "quick-water", "Add 24 oz"],
-  ["Protein", "quick-protein", "Add 30g"],
-  ["Meal", "quick-meal-library", "Open saved meals"],
-  ["Workout", "quick-workout", "Mark complete"],
+  ["Water", "quick-water", "Choose amount"],
+  ["Protein", "quick-protein", "Log meal or grams"],
+  ["Meal", "one-time-meal", "Log one-time meal"],
+  ["Workout", "quick-workout", "Open today's workout"],
   ["Voice Note", "quick-voice", "Talk it out"],
-  ["Steps", "quick-steps", "Add 2,000"]
+  ["Steps", "quick-steps", "Add or set total"]
 ];
 
 let state = loadState();
@@ -121,8 +121,9 @@ function avg(items, key) {
   return values.length ? round(values.reduce((a, b) => a + b, 0) / values.length, 1) : 0;
 }
 function todayKey() { return localISO(); }
-function challengeLength() { return Math.max(45, daysBetween(state.settings.startDate, state.settings.endDate)); }
+function challengeLength() { return 45; }
 function getDayNumber(date = todayKey()) { return clamp(daysBetween(state.settings.startDate, date) + 1, 1, challengeLength()); }
+function eventRunwayDay(date=todayKey()) { return Math.max(0, daysBetween(state.settings.startDate,date)+1-challengeLength()); }
 function workoutIndex(date = todayKey()) { return (getDayNumber(date) - 1) % 7; }
 function dayLog(date = todayKey()) {
   if (!state.daily[date]) state.daily[date] = { habits: {}, meals: [], exercises: {}, reset: false };
@@ -293,19 +294,41 @@ function allStreaks() {
     ["Water",habitStreak("water")]
   ];
 }
-function yesterdayRecoveryMessage() {
+function yesterdayKey() {
   const y=parseDate(todayKey()); y.setDate(y.getDate()-1);
-  const log=state.daily[localISO(y)];
-  return !log || !hasLogData(log) ? "You missed yesterday. Let's pick back up today." : "";
+  return localISO(y);
+}
+function hasTrackingHistoryBefore(date=todayKey()) {
+  return Object.entries(state.daily||{}).some(([key,log])=>key<date && hasLogData(log));
+}
+function affirmation() {
+  const lines=[
+    "One day at a time. Today is about showing up.",
+    "Lock in gently. Protein, water, steps — that's the assignment.",
+    "You do not need a perfect day. You need a consistent one.",
+    "Start simple. Your future self will thank you.",
+    "Soft life, strict standards."
+  ];
+  return lines[(getDayNumber()+parseDate(todayKey()).getDay())%lines.length];
+}
+function yesterdayRecapCard() {
+  if(getDayNumber()<=1 && !hasTrackingHistoryBefore()) return "";
+  const date=yesterdayKey(), log=state.daily[date];
+  if(log && hasLogData(log)) {
+    const meals=(log.meals||[]).length, sentence=dailyScore(log)>=75 ? "Strong day. Repeat the basics today." : "Useful data. Tighten one basic today and keep it moving.";
+    return `<div class="card yesterday-card"><div class="row"><div><p class="eyebrow">HOW DID YESTERDAY GO?</p><h3>${formatDate(date)} recap</h3></div><span class="pill">${dailyScore(log)}/100</span></div><div class="mini-metrics"><span>${num(log.protein)}g protein</span><span>${num(log.water)} oz water</span><span>${num(log.steps).toLocaleString()} steps</span><span>${meals} meal${meals===1?"":"s"}</span><span>${habitMet(log,"workout")?"Workout complete":"Workout not complete"}</span></div><p class="tiny">${sentence} ${log.notes?`Note: ${log.notes}`:""}</p></div>`;
+  }
+  return `<div class="card yesterday-card"><div><p class="eyebrow">HOW DID YESTERDAY GO?</p><h3>No log from yesterday.</h3><p class="muted">If you remember what happened, you can still backfill it.</p></div><div class="action-row"><button class="secondary-button" data-action="backfill-yesterday-quick">Backfill Yesterday</button><button class="secondary-button" data-action="backfill-yesterday-full">Full Check-In</button></div></div>`;
 }
 function topPriorities(log=dayLog()) {
   const options=[
-    {label:`${state.settings.proteinGoal}g Protein`, done:habitMet(log,"protein"), gap:100-pct(log.protein,state.settings.proteinGoal)},
-    {label:`${num(state.settings.stepGoal).toLocaleString()} Steps`, done:habitMet(log,"steps"), gap:100-pct(log.steps,state.settings.stepGoal)},
-    {label:`${state.settings.waterGoal} oz Water`, done:habitMet(log,"water"), gap:100-pct(log.water,state.settings.waterGoal)},
-    {label:"Workout Complete", done:habitMet(log,"workout"), gap:habitMet(log,"workout")?0:80},
-    {label:"Quick Check-In", done:hasLogData(log), gap:hasLogData(log)?0:40}
+    {type:"protein",title:"Protein",goal:num(state.settings.proteinGoal),current:num(log.protein),unit:"g",done:habitMet(log,"protein"),action:"quick-protein",button:"Log meal"},
+    {type:"steps",title:"Steps",goal:num(state.settings.stepGoal),current:num(log.steps),unit:"",done:habitMet(log,"steps"),action:"quick-steps",button:"Log steps"},
+    {type:"water",title:"Water",goal:num(state.settings.waterGoal),current:num(log.water),unit:" oz",done:habitMet(log,"water"),action:"quick-water",button:"Add water"},
+    {type:"workout",title:"Workout",goal:1,current:habitMet(log,"workout")?1:0,unit:"",done:habitMet(log,"workout"),action:"quick-workout",button:"Open workout"},
+    {type:"checkin",title:"Check-In",goal:1,current:hasLogData(log)?1:0,unit:"",done:hasLogData(log),action:"quick-log",button:"Quick log"}
   ];
+  options.forEach(x=>x.gap=x.type==="workout"||x.type==="checkin" ? (x.done?0:100) : 100-pct(x.current,x.goal));
   return options.sort((a,b)=>Number(a.done)-Number(b.done)||b.gap-a.gap).slice(0,3);
 }
 function routineBrief(date=todayKey()) {
@@ -351,16 +374,22 @@ Please analyze my week and give me one simple focus for the next 7 days.`;
 function forecast() {
   const checkins=officialCheckins(), current=num(latestOfficialWeight()), remaining=Math.max(1,daysRemaining(state.settings.endDate)), goal=num(state.settings.goalWeight);
   const logs=dailyEntries(9).filter(hasLogData), averageDeficit=avg(logs,deficit);
-  let weeklyRate=averageDeficit ? round((averageDeficit*7)/3500,2) : 0;
+  let weeklyRate=averageDeficit ? round((averageDeficit*7)/3500,2) : round((num(state.settings.deficitTarget,500)*7)/3500,2);
+  let confidence="Planning estimate";
   if(checkins.length>=2) {
     const first=checkins[0], latest=checkins.at(-1), elapsed=Math.max(1,first.day===latest.day ? latest.day-1 : latest.day-first.day);
     weeklyRate=round(((num(first.weight)-num(latest.weight))*7)/elapsed,2);
+    confidence="Official trend";
+  } else {
+    weeklyRate=round(clamp(weeklyRate,0,1.25),2);
   }
-  const estimated=round(current-(weeklyRate*remaining/7),1), needed=round(Math.max(0,current-goal)*7/remaining,2);
+  weeklyRate=round(clamp(weeklyRate,-.5,1.5),2);
+  const safeLoss=1.5*remaining/7;
+  const estimated=round(Math.max(current-safeLoss,current-(weeklyRate*remaining/7)),1), needed=round(Math.max(0,current-goal)*7/remaining,2);
   const difference=estimated-goal;
   const pace=difference<=-1 ? "Ahead of goal" : difference<=1 ? "On track" : difference<=3 ? "Slightly behind" : "Significantly behind";
-  const recommendation=weeklyRate>=needed ? "Keep the routine steady. Consistency is doing the work." : smartPriority(logs).recommendation;
-  return { current, estimated, needed, weeklyRate, pace, recommendation };
+  const recommendation=checkins.length<2 ? "Forecast will become more accurate after Day 9. Until then, this uses your planned deficit with safe guardrails." : weeklyRate>=needed ? "Keep the routine steady. Consistency is doing the work." : smartPriority(logs).recommendation;
+  return { current, estimated, needed, weeklyRate, pace, recommendation, confidence };
 }
 function metricValue(item, key) { return num(item?.[key] ?? (key==="bodyWater" ? item?.waterPercent : undefined)); }
 function officialSnapshot() { return officialCheckins().at(-1) || { day:1, ...STARTING_BASELINE }; }
@@ -405,7 +434,8 @@ function checkinInsights(snapshot=officialSnapshot()) {
 }
 function onTrackCard() {
   const report=onTrackReport();
-  return `<div class="card forecast-card"><div class="row"><div><p class="eyebrow">AM I ON TRACK?</p><h3>If this pattern continues to July 18</h3></div><span class="pill">${report.pace}</span></div><div class="metric-grid"><div class="metric"><small>Weight</small><strong>${report.weight.projected}${report.weight.unit}</strong></div><div class="metric"><small>Body fat</small><strong>${report.bodyFat.projected}${typeof report.bodyFat.projected==="number"?report.bodyFat.unit:""}</strong></div><div class="metric"><small>Waist</small><strong>${report.waist.projected}${typeof report.waist.projected==="number"?report.waist.unit:""}</strong></div><div class="metric"><small>Abdomen</small><strong>${report.abdomen.projected}${typeof report.abdomen.projected==="number"?report.abdomen.unit:""}</strong></div></div><p class="tiny">${report.message}</p></div>`;
+  const outlook=forecast();
+  return `<div class="card forecast-card"><div class="row"><div><p class="eyebrow">AM I ON TRACK?</p><h3>${outlook.confidence}</h3></div><span class="pill">${report.pace}</span></div><div class="metric-grid"><div class="metric"><small>Weight</small><strong>${report.weight.projected}${report.weight.unit}</strong></div><div class="metric"><small>Body fat</small><strong>${report.bodyFat.projected}${typeof report.bodyFat.projected==="number"?report.bodyFat.unit:""}</strong></div><div class="metric"><small>Waist</small><strong>${report.waist.projected}${typeof report.waist.projected==="number"?report.waist.unit:""}</strong></div><div class="metric"><small>Abdomen</small><strong>${report.abdomen.projected}${typeof report.abdomen.projected==="number"?report.abdomen.unit:""}</strong></div></div><p class="tiny">${outlook.recommendation}</p></div>`;
 }
 function smartPriority(logs=dailyEntries(7).filter(hasLogData)) {
   if(!logs.length) return { title:"Start with the basics", body:"Your first few logs will reveal the pattern. Today: water, protein, steps, and one meal you planned.", recommendation:"Log the basics today so your forecast can become personal." };
@@ -438,6 +468,18 @@ function todayFocus(log) {
   if (pct(log.protein, state.settings.proteinGoal) < 55) return "Build the next meal around protein before snacks.";
   if (pct(log.steps, state.settings.stepGoal) < 60) return "A short walk is the fastest way to build momentum.";
   return "Keep it steady. Finish the basics and let consistency do the work.";
+}
+function timeAwareCoach(log=dayLog()) {
+  const hour=new Date().getHours(), type=routineToday()[0];
+  if(hour<11) return type.includes("Clinical") ? "Morning plan: hydrate, eat protein before clinical, pack meal prep, and choose the easiest movement window." : "Morning plan: breakfast, water, lunch plan, and decide when movement happens.";
+  if(hour<17) return "Afternoon check: protein, water, steps, and whether dinner needs to stay simple.";
+  if(hour<22) return type.includes("Clinical") ? "Clinical evening: protein before shift, hydration during shift, and a recovery check-in when you can." : "Evening plan: dinner, steps finish, full check-in, and night routine.";
+  return "Late night: hydrate, log what you remember, protect sleep, and set tomorrow up gently.";
+}
+function checkinReminderCard() {
+  const [type]=routineToday();
+  const copy=type.includes("Clinical") ? "Clinical day check-in can happen late. Log the basics, hydrate, then protect recovery." : type==="Class Day" ? "Class day check-in: after dinner or evening steps, do the full review while it is fresh." : "Night check-in: close the day with the basics and one note.";
+  return `<div class="card reminder-card"><div class="row"><div><p class="eyebrow">CHECK-IN REMINDER</p><h3>${type}</h3></div><button class="secondary-button" data-action="full-checkin">Full Check-In</button></div><p class="tiny">${copy}</p></div>`;
 }
 function routineToday(date=todayKey()) { return ROUTINES[parseDate(date).getDay()] || ROUTINES[1]; }
 function routineCard() { const [type,priorities,reminders]=routineToday(); return `<div class="card"><div class="row"><div><p class="eyebrow">TODAY'S SCHEDULE TYPE</p><h3>${type}</h3></div><span class="pill">${formatDate(todayKey())}</span></div><div class="chip-row">${priorities.map(x=>`<span class="meal-chip">${x}</span>`).join("")}</div><details><summary>Routine reminders</summary><div class="detail-body">${reminders.map(x=>`<p class="tiny">○ ${x}</p>`).join("")}</div></details></div>`; }
@@ -479,21 +521,30 @@ function renderDashboard() {
   const workout = WORKOUTS[workoutIndex()][0], outlook=forecast(), review=weeklyReview(), priority=smartPriority(), transform=transformationScore(), simpleScore=dailyScore(log);
   const events=[{name:state.settings.miniEventName,date:state.settings.miniEventDate},{name:state.settings.eventName,date:state.settings.endDate},...(state.extraEvents||[])].filter(x=>x.date>=todayKey()).sort((a,b)=>a.date.localeCompare(b.date));
   const nextEvent=events[0]||{name:state.settings.eventName,date:state.settings.endDate};
-  const priorities=topPriorities(log), recovery=yesterdayRecoveryMessage(), routine=routineBrief();
+  const priorities=topPriorities(log), routine=routineBrief(), runway=eventRunwayDay();
+  const priorityCard=x=>{
+    const remaining=x.type==="workout"||x.type==="checkin" ? (x.done?"Complete":"Not complete") : `${Math.max(0,x.goal-x.current).toLocaleString()}${x.unit} remaining`;
+    const current=x.type==="workout"||x.type==="checkin" ? (x.done?"Complete":"Not complete") : `${x.current.toLocaleString()} / ${x.goal.toLocaleString()}${x.unit}`;
+    return `<div class="priority-detail ${x.done?"done":""}"><div><strong>${x.title}</strong><span>${current}</span><small>${remaining}</small></div><button class="secondary-button" data-action="${x.action}">${x.button}</button></div>`;
+  };
   document.querySelector("#dashboardContent").innerHTML = `
     ${state.samplesLoaded ? `<div class="card protocol"><div class="row"><div><p class="eyebrow">PREVIEW DATA</p><p class="tiny">Sample logs are loaded so you can explore the app. Clear them in Settings when you are ready to begin.</p></div><button class="secondary-button" data-go="settings">Settings</button></div></div>` : ""}
     <div class="card hero-card morning-hero">
       <p class="eyebrow" style="color:#f7d9d7">${phase()} · ${routine.type.toUpperCase()}</p>
       <h2>Good Morning Kenna</h2>
-      <p class="hero-subtitle">Day ${getDayNumber()} of ${challengeLength()} · ${daysRemaining(state.settings.miniEventDate)} days to Seattle · ${daysRemaining(state.settings.endDate)} days to Blast Fest</p>
-      ${recovery ? `<div class="recovery-note">${recovery}</div>` : ""}
+      <p class="hero-subtitle">${affirmation()}</p>
+      <div class="hero-day-row"><strong>Day ${getDayNumber()} of ${challengeLength()}</strong><span>${daysRemaining(state.settings.miniEventDate)} days to Seattle</span><span>${daysRemaining(state.settings.endDate)} days to Blast Fest</span></div>
+      ${runway?`<div class="recovery-note">Event runway: ${runway} day${runway===1?"":"s"} after the 45-day challenge.</div>`:""}
     </div>
+    <div class="card event-card-lite"><div><p class="eyebrow">NEXT EVENT</p><h3>${nextEvent.name}</h3><p class="tiny">${formatDate(nextEvent.date)} · ${daysRemaining(nextEvent.date)} days away</p></div><span class="pill">${outlook.confidence}</span></div>
+    ${yesterdayRecapCard()}
+    <div class="card plan-card"><p class="eyebrow">PLAN FOR TODAY</p><h3>${timeAwareCoach(log)}</h3><p class="tiny">${routine.note}</p></div>
     <div class="card priority-card morning-card">
       <div class="row">
         <div><p class="eyebrow">TODAY'S TOP 3 PRIORITIES</p><h3>Do these first. Everything else is extra.</h3></div>
         <div class="mini-score"><strong>${simpleScore}</strong><span>score</span></div>
       </div>
-      <div class="priority-list">${priorities.map(x=>`<button class="${x.done?"done":""}" data-action="${x.label.includes("Protein")?"quick-protein":x.label.includes("Steps")?"quick-steps":x.label.includes("Water")?"quick-water":x.label.includes("Workout")?"quick-workout":"quick-log"}">${x.done?"✓":"○"} ${x.label}</button>`).join("")}</div>
+      <div class="priority-card-list">${priorities.map(priorityCard).join("")}</div>
       <p class="tiny">Score: protein 30 · steps 20 · water 20 · workout 20 · check-in 10</p>
     </div>
     <div class="streak-strip">${allStreaks().map(([name,count])=>`<div><strong>${count}</strong><span>${name}</span></div>`).join("")}</div>
@@ -502,7 +553,7 @@ function renderDashboard() {
     ${bodyRecompDashboard()}
     ${goalVisualization()}
     <button class="card movement-card" data-go="workouts"><span><span class="eyebrow">TODAY'S MOVEMENT</span><strong>${workout}</strong><small>${log.workoutCompleted ? "Complete. Nice work." : "Tap to open today's exercises"}</small></span><span class="movement-arrow">→</span></button>
-    <div class="card event-card-lite"><div><p class="eyebrow">NEXT EVENT</p><h3>${nextEvent.name}</h3><p class="tiny">${formatDate(nextEvent.date)} · ${daysRemaining(nextEvent.date)} days away</p></div><span class="pill">${outlook.pace}</span></div>
+    ${checkinReminderCard()}
     <details class="card"><summary>View deeper progress</summary><div class="detail-body">
       <div class="card forecast-card compact-card"><div class="row"><div><p class="eyebrow">FORECAST</p><h3>${outlook.estimated} lbs by ${formatDate(state.settings.endDate)}</h3></div><span class="pill">${outlook.pace}</span></div><p class="tiny">${outlook.recommendation}</p></div>
       ${onTrackCard()}
@@ -522,11 +573,18 @@ function calorieSummary() {
 
 function renderToday() {
   const log = dayLog();
-  const habitHTML = HABITS.map(([key, label]) => `<label class="habit"><input type="checkbox" data-habit="${key}" ${log.habits[key] ? "checked" : ""}><span>${label}</span></label>`).join("");
+  const progressHabits=[
+    ["waterGoal","Water goal",num(log.water),num(state.settings.waterGoal)," oz","quick-water"],
+    ["proteinGoal","Protein goal",num(log.protein),num(state.settings.proteinGoal),"g","quick-protein"],
+    ["fiberGoal","Fiber goal",num(log.fiber),num(state.settings.fiberGoal),"g","quick-log"],
+    ["stepGoal","Steps",num(log.steps),num(state.settings.stepGoal),"","quick-steps"]
+  ].map(([key,label,current,goal,unit,action])=>`<div class="habit progress-habit"><label><input type="checkbox" data-habit="${key}" ${current>=goal || log.habits[key] ? "checked" : ""}><span>${label}: ${current.toLocaleString()} / ${goal.toLocaleString()}${unit}</span></label><button class="secondary-button" data-action="${action}">Log</button></div>`).join("");
+  const habitHTML = HABITS.filter(([key])=>!["waterGoal","proteinGoal","fiberGoal","stepGoal"].includes(key)).map(([key, label]) => `<label class="habit"><input type="checkbox" data-habit="${key}" ${log.habits[key] ? "checked" : ""}><span>${label}</span></label>`).join("");
   document.querySelector("#todayContent").innerHTML = `
     <div class="card"><div class="row"><div><p class="eyebrow">DAY ${getDayNumber()} MISSION</p><h3>${todayFocus(log)}</h3></div><div class="ring soft-ring" style="--value:${dailyScore(log)}" data-label="${dailyScore(log)}"></div></div><p class="tiny">Today's Score uses only the daily basics: protein, steps, water, workout, and check-in.</p></div>
+    <div class="card plan-card"><p class="eyebrow">TIME-AWARE COACHING</p><h3>${timeAwareCoach(log)}</h3></div>
     ${routineCard()}
-    <div class="card"><h3>Daily checklist</h3>${habitHTML}</div>
+    <div class="card"><h3>Daily checklist</h3>${progressHabits}${habitHTML}</div>
     <div class="card ${quickMode ? "" : "hidden"}"><p class="eyebrow">QUICK LOG</p><h3>30-second check-in</h3><p class="tiny">Log the basics and keep moving.</p><div class="spacer"></div><div class="form-grid">${field("Water oz","water",log.water)}${field("Protein g","protein",log.protein)}${field("Fiber g","fiber",log.fiber)}${field("Steps","steps",log.steps)}${field("Calories","calories",log.calories)}${completeField("Workout","workoutCompleted",log.workoutCompleted)}${selectField("Poop today?","poop",log.poop||"no",[["no","No"],["yes","Yes"]])}${field("Bloating 1-10","bloating",log.bloating||5)}${noteField("Quick note","notes",log.notes)}</div></div>
     <div class="card ${quickMode ? "hidden" : ""}"><p class="eyebrow">FULL CHECK-IN</p><h3>Detailed end-of-day review</h3><p class="tiny">Use this when you want the full pattern.</p><div class="spacer"></div><div class="form-grid">
       ${field("Calories consumed","calories",log.calories)}${field("Protein g","protein",log.protein)}${field("Fiber g","fiber",log.fiber)}${field("Water oz","water",log.water)}
@@ -540,6 +598,7 @@ function renderToday() {
       ${noteField("Daily notes","notes",log.notes)}
     </div><div class="spacer"></div><button class="secondary-button" data-mic="note-notes">🎤 Talk check-in</button><p class="tiny">Speak naturally. Your transcript saves as a note. Version 1 uses manual Apple Health entry.</p></div>
     ${feedbackHTML(log)}
+    ${checkinReminderCard()}
   `;
 }
 
@@ -571,9 +630,11 @@ function renderNutrition() {
     <div class="subnav">${[["meals","Meals"],["gut","Gut"],["grocery","Grocery"],["wholefoods","Whole Foods"]].map(([key,label])=>`<button class="${nutritionTab===key?"active":""}" data-nutrition-tab="${key}">${label}</button>`).join("")}</div>
     ${nutritionTab==="gut" ? gutPanel(log) : nutritionTab==="grocery" ? groceryPanel() : nutritionTab==="wholefoods" ? wholeFoodsPanel() : `
     <div class="card hero-card"><p class="eyebrow" style="color:#f7d9d7">TODAY'S NOURISHMENT</p><h2>${num(log.calories)} calories</h2><p class="muted">Build the plate around protein. Keep the rest simple.</p><div class="spacer"></div>${progressRow("Protein",log.protein,state.settings.proteinGoal,"g")}</div>
-    ${savedMealsPanel()}
     <div class="card"><h3>Meals logged today</h3>${meals.length ? meals.map((m,i)=>`<div class="meal-item row"><div><strong>${m.name}</strong><div class="tiny">${m.category||m.type} · ${m.calories} cal · ${m.protein}g protein · ${m.fiber}g fiber</div>${m.addons?.length?`<div class="chip-row">${m.addons.map(x=>`<span class="meal-chip">+ ${x.name}</span>`).join("")}</div>`:""}</div><div class="meal-actions"><button class="secondary-button" data-edit-logged-meal="${i}">Edit</button><button class="secondary-button" data-remove-meal="${i}">Remove</button></div></div>`).join("") : `<div class="empty">No meals logged yet. Your first meal will show up here.</div>`}</div>
-    <div class="card"><p class="eyebrow">PHOTO FOOD LOG</p><h3>Take a quick meal photo</h3><div class="spacer"></div><input type="file" accept="image/*" capture="environment" data-photo="meal-${todayKey()}"><p class="tiny">On mobile, this can open your camera. Photos stay on this device.</p></div>`}
+    <div class="card"><div class="row"><div><p class="eyebrow">LOG A MEAL</p><h3>One-time or saved meal</h3></div><button class="button" data-action="one-time-meal">Log one-time meal</button></div><p class="tiny">Use this for Taco Bell, a restaurant meal, or anything you do not want saved as a template.</p></div>
+    <div class="card"><p class="eyebrow">PHOTO + LABEL FLOW</p><h3>Take photos, then enter macros</h3><div class="form-grid"><label>Meal photo<input type="file" accept="image/*" capture="environment" data-photo="meal-${todayKey()}"></label><label>Nutrition label photo<input type="file" accept="image/*" capture="environment" data-photo="label-${todayKey()}"></label></div><p class="tiny">Photo saved. For an AI estimate, copy this prompt and upload the photo to ChatGPT.</p><button class="secondary-button" data-action="copy-photo-prompt">Copy ChatGPT estimate prompt</button></div>
+    ${savedMealsPanel()}
+    <div class="card"><div class="row"><div><p class="eyebrow">CREATE MEAL TEMPLATE</p><h3>Save a repeat meal</h3></div><button class="secondary-button" data-action="new-saved-meal">Create template</button></div></div>`}
   `;
 }
 function savedMealsPanel() {
@@ -587,7 +648,11 @@ function mealChoiceModal(id) {
   modal(`<div class="modal-body"><p class="eyebrow">SAVED MEAL</p><h2>${meal.name}</h2>${macroChips(meal)}<p class="muted">${meal.notes||"No notes yet."}</p>${meal.ingredients?.length?`<div class="chip-row">${meal.ingredients.map(x=>`<span class="tag-chip">${x}</span>`).join("")}</div>`:""}${variations.length?`<div class="card compact-card"><p class="eyebrow">FAST VARIATIONS</p><div class="chip-row">${variations.map((x,i)=>`<button class="meal-chip" data-log-variation="${meal.id}" data-variation-index="${i}">+ ${x.name}</button>`).join("")}</div></div>`:""}<div class="stack gap" style="margin-top:14px"><button class="button" data-log-as-is="${meal.id}">Log as-is</button><button class="secondary-button" data-customize-meal="${meal.id}">Customize today</button><button class="secondary-button" data-duplicate-template="${meal.id}">Duplicate meal</button><button class="secondary-button" data-edit-template="${meal.id}">Edit template</button><button class="secondary-button" data-toggle-favorite="${meal.id}">${meal.favorite?"Unmark favorite":"Mark favorite"}</button><button class="danger-button" data-delete-template="${meal.id}">Delete saved meal</button><button class="secondary-button" data-close>Close</button></div></div>`);
 }
 function mealFormFields(meal, prefix="") {
-  return `${field("Meal name",`${prefix}name`,meal.name||"","text")}${selectField("Category",`${prefix}category`,meal.category||"breakfast",["breakfast","lunch","dinner","snack","drink"])}${field("Calories",`${prefix}calories`,meal.calories)}${field("Protein g",`${prefix}protein`,meal.protein)}${field("Fiber g",`${prefix}fiber`,meal.fiber)}${field("Carbs g",`${prefix}carbs`,meal.carbs)}${field("Fat g",`${prefix}fat`,meal.fat)}${field("Sodium optional",`${prefix}sodium`,meal.sodium||"")}<label class="full">Ingredients, one per line<textarea data-field="${prefix}ingredients">${(meal.ingredients||[]).join("\n")}</textarea></label><label class="full">Tags, comma separated<textarea data-field="${prefix}tags">${(meal.tags||[]).join(", ")}</textarea></label><label class="full">Notes<textarea data-field="${prefix}notes">${meal.notes||""}</textarea></label><label class="full">Photo optional<input type="file" accept="image/*" capture="environment" data-photo="saved-meal-${meal.id||"new"}"></label>`;
+  return `${field("Meal name",`${prefix}name`,meal.name||"","text")}${selectField("Category",`${prefix}category`,meal.category||"breakfast",["breakfast","lunch","dinner","snack","drink","restaurant"])}${field("Restaurant optional",`${prefix}restaurant`,meal.restaurant||"","text")}${field("Menu item optional",`${prefix}menuItem`,meal.menuItem||"","text")}${field("Calories",`${prefix}calories`,meal.calories)}${field("Protein g",`${prefix}protein`,meal.protein)}${field("Fiber g",`${prefix}fiber`,meal.fiber)}${field("Carbs g",`${prefix}carbs`,meal.carbs)}${field("Fat g",`${prefix}fat`,meal.fat)}${field("Sodium optional",`${prefix}sodium`,meal.sodium||"")}<label class="full">Ingredients, one per line<textarea data-field="${prefix}ingredients">${(meal.ingredients||[]).join("\n")}</textarea></label><label class="full">Tags, comma separated<textarea data-field="${prefix}tags">${(meal.tags||[]).join(", ")}</textarea></label><label class="full">Notes<textarea data-field="${prefix}notes">${meal.notes||""}</textarea></label><label class="full">Photo optional<input type="file" accept="image/*" capture="environment" data-photo="saved-meal-${meal.id||"new"}"></label>`;
+}
+function oneTimeMealModal() {
+  const meal={id:"one-time",name:"",category:"restaurant",calories:"",protein:"",fiber:"",carbs:"",fat:"",sodium:"",ingredients:[],tags:["one-time"],notes:""};
+  modal(`<div class="modal-body"><p class="eyebrow">ONE-TIME MEAL</p><h2>Log it without saving forever.</h2><form id="oneTimeMealForm"><div class="form-grid">${mealFormFields(meal,"meal.")}</div><div class="modal-actions"><button type="button" class="secondary-button" data-close>Cancel</button><button class="secondary-button" name="saveMode" value="template">Save as template too</button><button class="button" name="saveMode" value="today">Save only for today</button></div></form></div>`);
 }
 function templateFormModal(id=null) {
   const meal=id?findSavedMeal(id):{id:mealId(),name:"",category:"breakfast",calories:"",protein:"",fiber:"",carbs:"",fat:"",sodium:"",ingredients:[],tags:[],notes:"",favorite:false,addons:[]};
@@ -604,7 +669,7 @@ function customizeMealModal(id, mode="today", logIndex="") {
 }
 function collectMealForm(form, prefix="") {
   const data={}; form.querySelectorAll("[data-field]").forEach(x=>{ if(!prefix || x.dataset.field.startsWith(prefix)) data[x.dataset.field.replace(prefix,"")]=coerce(x); });
-  return { id:form.dataset.templateId||mealId(), name:data.name||"Saved meal", category:data.category||"meal", calories:num(data.calories), protein:num(data.protein), fiber:num(data.fiber), carbs:num(data.carbs), fat:num(data.fat), sodium:data.sodium||"", ingredients:String(data.ingredients||"").split("\n").map(x=>x.trim()).filter(Boolean), notes:data.notes||"", tags:String(data.tags||"").split(",").map(x=>x.trim()).filter(Boolean), favorite:false, addons:[] };
+  return { id:form.dataset.templateId||mealId(), name:data.name||"Saved meal", category:data.category||"meal", restaurant:data.restaurant||"", menuItem:data.menuItem||"", calories:num(data.calories), protein:num(data.protein), fiber:num(data.fiber), carbs:num(data.carbs), fat:num(data.fat), sodium:data.sodium||"", ingredients:String(data.ingredients||"").split("\n").map(x=>x.trim()).filter(Boolean), notes:data.notes||"", tags:String(data.tags||"").split(",").map(x=>x.trim()).filter(Boolean), favorite:false, addons:[] };
 }
 function applyAddons(base, form, templateId) {
   const source=findSavedMeal(templateId), addons=source?.addons||[];
@@ -667,30 +732,38 @@ function renderProgress() {
   document.querySelector("#progressContent").innerHTML = `
     ${bodyRecompDashboard()}
     ${goalVisualization()}
-    <div class="metric-grid">
+    <div class="card"><p class="eyebrow">PROGRESS OVERVIEW</p><div class="metric-grid">
       <div class="metric"><small>7-day calories</small><strong>${avg(dailyEntries(7),"calories") || "—"}</strong></div>
       <div class="metric"><small>9-day deficit</small><strong>${avg(dailyEntries(9),deficit) || "—"}</strong></div>
       <div class="metric"><small>Check-in streak</small><strong>${habitStreak("checkin")}</strong></div>
       <div class="metric"><small>Current cycle</small><strong>${Math.ceil(getDayNumber()/9)}</strong></div>
+    </div></div>
+    <div class="progress-section"><p class="eyebrow">OFFICIAL CHECK-IN TRENDS</p>
+      ${chartCard("Official weight trend", CHECKIN_DAYS.map(day => ({ label:`D${day}`, value:num(state.checkins[day]?.weight) })).filter(x=>x.value), "Official weigh-ins only. Private random weigh-ins never change this chart.")}
+      ${chartCard("Official transformation score", CHECKIN_DAYS.map(day => state.checkins[day] ? ({ label:`D${day}`, value:transformationScore({day,...state.checkins[day]}) }) : null).filter(Boolean), "Body recomp score from official metrics plus protein and steps.")}
+      ${chartCard("Body fat trend", CHECKIN_DAYS.map(day => ({ label:`D${day}`, value:num(state.checkins[day]?.bodyFat) })).filter(x=>x.value))}
+      ${chartCard("Waist trend", CHECKIN_DAYS.map(day => ({ label:`D${day}`, value:num(state.checkins[day]?.waist) })).filter(x=>x.value))}
+      ${chartCard("Abdomen trend", CHECKIN_DAYS.map(day => ({ label:`D${day}`, value:num(state.checkins[day]?.abdomen) })).filter(x=>x.value))}
+      ${chartCard("Muscle mass trend", CHECKIN_DAYS.map(day => ({ label:`D${day}`, value:num(state.checkins[day]?.muscleMass) })).filter(x=>x.value))}
+      ${chartCard("Body water trend", CHECKIN_DAYS.map(day => ({ label:`D${day}`, value:metricValue(state.checkins[day],"bodyWater") })).filter(x=>x.value))}
     </div>
-    ${chartCard("Official weight trend", CHECKIN_DAYS.map(day => ({ label:`D${day}`, value:num(state.checkins[day]?.weight) })).filter(x=>x.value), "Official weigh-ins only. Private random weigh-ins never change this chart.")}
-    ${chartCard("Official transformation score", CHECKIN_DAYS.map(day => state.checkins[day] ? ({ label:`D${day}`, value:transformationScore({day,...state.checkins[day]}) }) : null).filter(Boolean), "Body recomp score from official metrics plus protein and steps.")}
-    ${chartCard("Body fat trend", CHECKIN_DAYS.map(day => ({ label:`D${day}`, value:num(state.checkins[day]?.bodyFat) })).filter(x=>x.value))}
-    ${chartCard("Waist trend", CHECKIN_DAYS.map(day => ({ label:`D${day}`, value:num(state.checkins[day]?.waist) })).filter(x=>x.value))}
-    ${chartCard("Abdomen trend", CHECKIN_DAYS.map(day => ({ label:`D${day}`, value:num(state.checkins[day]?.abdomen) })).filter(x=>x.value))}
-    ${chartCard("Muscle mass trend", CHECKIN_DAYS.map(day => ({ label:`D${day}`, value:num(state.checkins[day]?.muscleMass) })).filter(x=>x.value))}
-    ${chartCard("Body water trend", CHECKIN_DAYS.map(day => ({ label:`D${day}`, value:metricValue(state.checkins[day],"bodyWater") })).filter(x=>x.value))}
-    ${chartCard("Today's Score", logs.map(x=>({label:formatDate(x.date),value:dailyScore(x)})), "Simple Phase 5 score: protein, steps, water, workout, and check-in.")}
-    ${chartCard("Calories consumed", logs.map(x=>({label:formatDate(x.date),value:num(x.calories)})).filter(x=>x.value))}
-    ${chartCard("Average calorie deficit", logs.map(x=>({label:formatDate(x.date),value:deficit(x)})).filter(x=>x.value))}
-    ${chartCard("Protein", logs.map(x=>({label:formatDate(x.date),value:num(x.protein)})).filter(x=>x.value))}
-    ${chartCard("Fiber", logs.map(x=>({label:formatDate(x.date),value:num(x.fiber)})).filter(x=>x.value))}
-    ${chartCard("Water", logs.map(x=>({label:formatDate(x.date),value:num(x.water)})).filter(x=>x.value))}
-    ${chartCard("Steps", logs.map(x=>({label:formatDate(x.date),value:num(x.steps)})).filter(x=>x.value))}
-    ${chartCard("Sleep", logs.map(x=>({label:formatDate(x.date),value:num(x.sleep)})).filter(x=>x.value))}
-    ${chartCard("Bloating", logs.map(x=>({label:formatDate(x.date),value:num(x.bloating)})).filter(x=>x.value))}
-    ${chartCard("Constipation", logs.map(x=>({label:formatDate(x.date),value:num(x.constipation)})).filter(x=>x.value))}
-    ${chartCard("Gut Health Score", logs.map(x=>({label:formatDate(x.date),value:gutScore(x)})))}
+    <div class="progress-section"><p class="eyebrow">DAILY HABIT TRENDS</p>
+      ${chartCard("Today's Score", logs.map(x=>({label:formatDate(x.date),value:dailyScore(x)})), "Protein, steps, water, workout, and check-in.")}
+      ${chartCard("Water", logs.map(x=>({label:formatDate(x.date),value:num(x.water)})).filter(x=>x.value))}
+      ${chartCard("Steps", logs.map(x=>({label:formatDate(x.date),value:num(x.steps)})).filter(x=>x.value))}
+      ${chartCard("Sleep", logs.map(x=>({label:formatDate(x.date),value:num(x.sleep)})).filter(x=>x.value))}
+    </div>
+    <div class="progress-section"><p class="eyebrow">NUTRITION + GUT TRENDS</p>
+      ${chartCard("Calories consumed", logs.map(x=>({label:formatDate(x.date),value:num(x.calories)})).filter(x=>x.value))}
+      ${chartCard("Average calorie deficit", logs.map(x=>({label:formatDate(x.date),value:deficit(x)})).filter(x=>x.value))}
+      ${chartCard("Protein", logs.map(x=>({label:formatDate(x.date),value:num(x.protein)})).filter(x=>x.value))}
+      ${chartCard("Fiber", logs.map(x=>({label:formatDate(x.date),value:num(x.fiber)})).filter(x=>x.value))}
+      ${chartCard("Bloating", logs.map(x=>({label:formatDate(x.date),value:num(x.bloating)})).filter(x=>x.value))}
+      ${chartCard("Constipation", logs.map(x=>({label:formatDate(x.date),value:num(x.constipation)})).filter(x=>x.value))}
+      ${chartCard("Gut Health Score", logs.map(x=>({label:formatDate(x.date),value:gutScore(x)})))}
+    </div>
+    <div class="progress-section"><p class="eyebrow">WORKOUT TRENDS</p>${gymProgression()}</div>
+    <div class="progress-section"><p class="eyebrow">FORECAST</p>${onTrackCard()}</div>
     <div class="card"><h3>Challenge calendar</h3><p class="tiny">Tap any day to view its log. Gold dots mark official check-ins. Official Day 45 is your final measurement, with Blast Fest shown as the final countdown day.</p><div class="spacer"></div>${calendarHTML()}</div>
     <div class="card"><h3>Achievements</h3><div class="achievement-grid">${badgesHTML()}</div></div>
   `;
@@ -707,7 +780,8 @@ function calendarHTML() {
   const runway=Math.max(45,daysBetween(state.settings.startDate,state.settings.endDate)+1);
   return `<div class="calendar">${Array.from({length:runway},(_,i)=>i+1).map(day => {
     const date=challengeDate(day), log=state.daily[date], complete=log&&(score(log)>=60||log.reset), extra=(state.extraEvents||[]).find(x=>x.date===date), eventName=date===state.settings.miniEventDate?state.settings.miniEventName:date===state.settings.endDate?state.settings.eventName:extra?.name, classes=["day",complete?"complete":"",day===getDayNumber()?"current":"",CHECKIN_DAYS.includes(day)?"checkin":"",eventName?"event":""].join(" ");
-    return `<button class="${classes}" data-calendar-day="${date}" title="${date}${eventName?` · ${eventName}`:""}"><span>${day}</span><small>${parseDate(date).getDate()}</small></button>`;
+    const label=day<=45?day:`R${day-45}`;
+    return `<button class="${classes} ${day>45?"runway":""}" data-calendar-day="${date}" title="${date}${eventName?` · ${eventName}`:""}"><span>${label}</span><small>${day>45?"Runway":parseDate(date).getDate()}</small></button>`;
   }).join("")}</div>`;
 }
 function badgesHTML() {
@@ -925,6 +999,7 @@ function renderSettings() {
     <div class="card"><h3>Routine-based reminders</h3><p class="muted">${routineToday()[2].join(" · ")}</p><div class="spacer"></div><button class="secondary-button" data-action="notifications">Enable optional browser reminders</button></div>
     ${creatorModeCard()}
     <div class="card"><h3>Starter data</h3><p class="muted">Load sample days to preview charts, or clear all tracker data when you are ready for a fresh start.</p><div class="spacer"></div><div class="row wrap"><button class="secondary-button" data-action="samples">Load sample data</button><button class="danger-button" data-action="clear-data">Clear all data</button></div></div>
+    <div class="card"><p class="eyebrow">BACKUP + DEVICE SYNC</p><h3>Your data is browser-specific</h3><p class="muted">Data entered on your phone will not automatically appear on your computer unless you export/import or use future cloud sync.</p><div class="spacer"></div><div class="row wrap"><button class="secondary-button" data-action="export-backup">Export backup JSON</button><label class="secondary-button import-label">Import backup JSON<input type="file" accept="application/json" data-import-backup hidden></label></div></div>
     <div class="card"><p class="eyebrow">SAFETY NOTE</p><p>This tracker supports wellness and consistency. It is not medical advice. If you experience dizziness, fainting, extreme fatigue, severe constipation, chest pain, disordered eating symptoms, or worsening health symptoms, seek medical guidance.</p></div>
     <div class="card"><p class="tiny">All tracker data stays on this device in your browser. Version 1 stores simple data in localStorage and photos in IndexedDB when available.</p></div>
   `;
@@ -990,7 +1065,7 @@ document.addEventListener("click", e => {
 document.addEventListener("change", e => {
   if(e.target.closest("#mealBuilderForm")) updateMealBuilderEstimate();
   if(e.target.matches("[data-field]")) {
-    if(e.target.closest("#savedMealForm,#mealBuilderForm,#customMealForm,#wholeFoodsForm,#randomWeightForm,#eventForm,#creatorEventForm,#groceryForm,#exerciseForm,#checkinForm")) return;
+    if(e.target.closest("#savedMealForm,#mealBuilderForm,#oneTimeMealForm,#backfillForm,#customMealForm,#wholeFoodsForm,#randomWeightForm,#eventForm,#creatorEventForm,#groceryForm,#exerciseForm,#checkinForm")) return;
     const key=e.target.dataset.field, value=coerce(e.target);
     if(key.startsWith("settings.")) { setDeep(state,key,value); state.settings.height=num(state.settings.heightFeet)*12+num(state.settings.heightInches); }
     else if(key.startsWith("baseline.") || key.startsWith("weeklyPlan.")) setDeep(state,key,value);
@@ -998,6 +1073,7 @@ document.addEventListener("change", e => {
     saveState(); render();
   }
   if(e.target.matches("[data-photo]") && e.target.files[0]) storePhoto(e.target.dataset.photo,e.target.files[0]);
+  if(e.target.matches("[data-import-backup]") && e.target.files[0]) importBackup(e.target.files[0]);
 });
 document.addEventListener("input", e => { if(e.target.closest("#mealBuilderForm")) updateMealBuilderEstimate(); });
 document.addEventListener("submit", e => {
@@ -1019,15 +1095,64 @@ function quickVoiceModal() {
   const id="quickVoiceNote";
   modal(`<div class="modal-body"><p class="eyebrow">VOICE NOTE</p><h2>Talk it out.</h2><p class="muted">Say what happened. The transcript saves to today's notes.</p><div class="note-wrap" style="margin-top:12px"><textarea id="${id}" placeholder="Tap the mic and speak..."></textarea>${mic(id)}</div><div class="modal-actions"><button class="secondary-button" data-close>Cancel</button><button class="button" data-action="save-quick-voice">Save note</button></div></div>`);
 }
+function quickAmountModal(type) {
+  const config={
+    water:{title:"Add water",field:"quickAmount",unit:"oz",actions:[[8,"+8 oz"],[16,"+16 oz"],[24,"+24 oz"],[40,"+40 oz"]],save:"save-water-amount"},
+    steps:{title:"Log steps",field:"quickAmount",unit:"steps",actions:[[1000,"+1,000"],[2000,"+2,000"],[5000,"+5,000"]],save:"save-steps-amount"}
+  }[type];
+  modal(`<div class="modal-body"><p class="eyebrow">QUICK LOG</p><h2>${config.title}</h2><div class="quick-launch-grid">${config.actions.map(([amount,label])=>`<button class="quick-launch-card" data-action="${type}-add-${amount}"><strong>${label}</strong><span>Add to today</span></button>`).join("")}</div><div class="form-grid"><label>Custom ${config.unit}<input id="${config.field}" type="number" placeholder="Type amount"></label></div><div class="modal-actions"><button class="secondary-button" data-close>Cancel</button>${type==="steps"?`<button class="secondary-button" data-action="set-steps-total">Set total steps</button>`:""}<button class="button" data-action="${config.save}">Add amount</button></div></div>`);
+}
+function quickProteinModal() {
+  modal(`<div class="modal-body"><p class="eyebrow">PROTEIN</p><h2>Best option: log the meal.</h2><p class="muted">Protein totals are cleaner when they come from meals. Manual grams are here for quick fixes.</p><div class="stack gap"><button class="button" data-action="quick-meal-library">Log meal</button><button class="secondary-button" data-action="manual-protein">Add protein grams manually</button><button class="secondary-button" data-close>Close</button></div></div>`);
+}
+function manualProteinModal() {
+  modal(`<div class="modal-body"><p class="eyebrow">MANUAL PROTEIN</p><h2>Add grams only</h2><label>Protein grams<input id="manualProteinGrams" type="number" placeholder="Example: 25"></label><div class="modal-actions"><button class="secondary-button" data-close>Cancel</button><button class="button" data-action="save-manual-protein">Add protein</button></div></div>`);
+}
+function addToLog(key, amount) {
+  const log=dayLog(); log[key]=num(log[key])+num(amount); saveState(); document.querySelector("#modal")?.close(); toast(`${key[0].toUpperCase()+key.slice(1)} updated`); render();
+}
+function exportBackup() {
+  const payload={version:1,exportedAt:new Date().toISOString(),state};
+  const blob=new Blob([JSON.stringify(payload,null,2)],{type:"application/json"});
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(blob);
+  a.download=`kenna-snatched-backup-${todayKey()}.json`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+  toast("Backup exported");
+}
+function importBackup(file) {
+  const reader=new FileReader();
+  reader.onload=()=>{ try { const data=JSON.parse(reader.result); state=data.state||data; saveState(); toast("Backup imported"); render(); } catch { toast("That backup file could not be read."); } };
+  reader.readAsText(file);
+}
+function backfillModal(date, full=false) {
+  const log=dayLog(date);
+  modal(`<div class="modal-body"><p class="eyebrow">BACKFILL ${formatDate(date).toUpperCase()}</p><h2>${full?"Detailed end-of-day review":"30-second check-in"}</h2><form id="backfillForm" data-date="${date}"><div class="form-grid">
+    ${field("Water oz","water",log.water)}${field("Protein g","protein",log.protein)}${field("Fiber g","fiber",log.fiber)}${field("Steps","steps",log.steps)}${field("Calories","calories",log.calories)}${completeField("Workout","workoutCompleted",log.workoutCompleted)}${selectField("Poop today?","poop",log.poop||"no",[["no","No"],["yes","Yes"]])}${field("Bloating 1-10","bloating",log.bloating||"")}
+    ${full?`${field("Active calories","activeCalories",log.activeCalories)}${field("Exercise minutes","exerciseMinutes",log.exerciseMinutes)}${field("Sleep hours","sleep",log.sleep,"number",'step="0.1"')}${field("Constipation 1-10","constipation",log.constipation||"")}${field("Mood 1-10","mood",log.mood||"")}${field("Energy 1-10","energy",log.energy||"")}`:""}
+    ${noteField("Notes","notes",log.notes)}
+  </div><div class="modal-actions"><button type="button" class="secondary-button" data-close>Cancel</button><button class="button">Save backfill</button></div></form></div>`);
+}
 function handleAction(action) {
   if(action==="quick-log") { quickMode=true; go("today"); document.querySelector("#quickModeButton").textContent="Full check-in"; }
   if(action==="full-checkin") { quickMode=false; go("today"); document.querySelector("#quickModeButton").textContent="Quick log"; }
   if(action==="quick-launcher") quickLauncherModal();
-  if(action==="quick-water") { const log=dayLog(); log.water=num(log.water)+24; saveState(); toast("Added 24 oz water"); render(); }
-  if(action==="quick-protein") { const log=dayLog(); log.protein=num(log.protein)+30; saveState(); toast("Added 30g protein"); render(); }
-  if(action==="quick-steps") { const log=dayLog(); log.steps=num(log.steps)+2000; saveState(); toast("Added 2,000 steps"); render(); }
-  if(action==="quick-workout") { dayLog().workoutCompleted=true; saveState(); toast("Workout marked complete"); render(); }
+  if(action==="quick-water") quickAmountModal("water");
+  if(action==="quick-protein") quickProteinModal();
+  if(action==="manual-protein") manualProteinModal();
+  if(action==="quick-steps") quickAmountModal("steps");
+  if(action==="quick-workout") { workoutDay=workoutIndex(); go("workouts"); document.querySelector("#modal")?.close(); }
+  if(action.startsWith("water-add-")) addToLog("water",action.split("-").at(-1));
+  if(action.startsWith("steps-add-")) addToLog("steps",action.split("-").at(-1));
+  if(action==="save-water-amount") addToLog("water",num(document.querySelector("#quickAmount")?.value));
+  if(action==="save-steps-amount") addToLog("steps",num(document.querySelector("#quickAmount")?.value));
+  if(action==="set-steps-total") { const log=dayLog(); log.steps=num(document.querySelector("#quickAmount")?.value); saveState(); document.querySelector("#modal")?.close(); toast("Steps total set"); render(); }
+  if(action==="save-manual-protein") addToLog("protein",num(document.querySelector("#manualProteinGrams")?.value));
   if(action==="quick-meal-library") { nutritionTab="meals"; go("nutrition"); }
+  if(action==="one-time-meal") oneTimeMealModal();
+  if(action==="backfill-yesterday-quick") backfillModal(yesterdayKey(),false);
+  if(action==="backfill-yesterday-full") backfillModal(yesterdayKey(),true);
   if(action==="quick-voice") quickVoiceModal();
   if(action==="save-quick-voice") { const text=document.querySelector("#quickVoiceNote")?.value.trim(); if(text){ const log=dayLog(); log.notes=[log.notes,text].filter(Boolean).join(" | "); saveState(); document.querySelector("#modal").close(); toast("Voice note saved"); render(); } }
   if(action==="open-gut-tab") { nutritionTab="gut"; go("nutrition"); }
@@ -1040,6 +1165,7 @@ function handleAction(action) {
   if(action==="copy-weekly-report") navigator.clipboard.writeText(weeklyReportText()).then(()=>toast("Weekly report copied"));
   if(action==="copy-export") navigator.clipboard.writeText(chatGPTExport()).then(()=>toast("Coach export copied for ChatGPT"));
   if(action==="copy-photo-prompt") navigator.clipboard.writeText("I am attaching a meal photo. Please estimate calories, protein, fiber, carbs, fat, and sodium range. Tell me how to make this meal more supportive of my protein and gut-health goals without being extreme.").then(()=>toast("Meal photo prompt copied"));
+  if(action==="export-backup") exportBackup();
   if(action==="save-coach-note") { const text=document.querySelector("#coachFeedback")?.value.trim(); if(text){ state.coachNotes.push({date:todayKey(),text}); saveState(); toast("Coach note saved"); renderCoach(); } }
   if(action==="notifications") requestNotifications();
   if(action==="samples") { loadSamples(); toast("Sample data loaded"); render(); }
@@ -1059,6 +1185,8 @@ document.addEventListener("submit",e=>{
   if(e.target.id==="customMealForm"){e.preventDefault();const d={};e.target.querySelectorAll("[data-field]").forEach(x=>d[x.dataset.field]=coerce(x));addMeal([d.name||"Custom meal",d.type||"Meal",num(d.calories),num(d.protein),num(d.fiber),num(d.carbs),num(d.fat)]);document.querySelector("#modal").close();}
   if(e.target.id==="savedMealForm"){e.preventDefault();const existing=e.target.dataset.existing==="yes", id=e.target.dataset.templateId, prior=findSavedMeal(id), meal=collectMealForm(e.target); meal.id=id; meal.favorite=prior?Boolean(prior.favorite):Boolean(meal.tags.includes("favorite")); meal.addons=prior?.addons||[]; meal.useCount=num(prior?.useCount); meal.lastUsed=prior?.lastUsed||""; meal.photoKey=`saved-meal-${id}`; if(existing){ const index=state.savedMeals.findIndex(x=>x.id===id); state.savedMeals[index]=meal; } else state.savedMeals.push(meal); saveState(); document.querySelector("#modal").close(); toast("Saved meal template updated"); render(); }
   if(e.target.id==="mealBuilderForm"){e.preventDefault();const clicked=e.submitter?.value||"today", mode=e.target.dataset.mode, templateId=e.target.dataset.templateId, base=collectMealForm(e.target,"meal."), meal=applyAddons({...base, templateId}, e.target, templateId); if(mode==="logged"){ const log=dayLog(), idx=num(e.target.dataset.logIndex); meal.logId=log.meals[idx]?.logId||mealId(); meal.templateId=log.meals[idx]?.templateId||templateId; log.meals[idx]=meal; recalcMealTotals(log); saveState(); document.querySelector("#modal").close(); toast("Today's meal updated"); render(); return; } if(clicked==="update"){ const original=findSavedMeal(templateId); if(original){ Object.assign(original, {...meal, id:templateId, favorite:original.favorite, addons:original.addons||[], useCount:num(original.useCount), lastUsed:original.lastUsed||""}); saveState(); } } if(clicked==="new"){ const newTemplate={...meal, id:mealId(), favorite:false, useCount:0, lastUsed:"", addons:[], tags:[...(meal.tags||[]),"custom"]}; state.savedMeals.push(newTemplate); meal.templateId=newTemplate.id; } addMealObject({...meal, logId:mealId()}); document.querySelector("#modal").close(); }
+  if(e.target.id==="oneTimeMealForm"){e.preventDefault();const clicked=e.submitter?.value||"today", meal=collectMealForm(e.target,"meal."); meal.logId=mealId(); meal.templateId=""; meal.tags=[...(meal.tags||[]),"one-time"]; if(clicked==="template"){ const template={...meal,id:mealId(),favorite:false,useCount:0,lastUsed:"",addons:[]}; state.savedMeals.push(template); meal.templateId=template.id; toast("Meal logged and saved as a template"); } else toast("One-time meal logged"); addMealObject(meal,{touch:false}); document.querySelector("#modal").close(); }
+  if(e.target.id==="backfillForm"){e.preventDefault();const date=e.target.dataset.date, log=dayLog(date); e.target.querySelectorAll("[data-field]").forEach(x=>{ const key=x.dataset.field; if(key.includes(".")) setDeep(log,key,coerce(x)); else log[key]=coerce(x); }); saveState(); document.querySelector("#modal").close(); toast("Yesterday backfilled"); render(); }
   if(e.target.id==="randomWeightForm"){e.preventDefault();state.randomWeights.push({date:todayKey(),weight:num(e.target.querySelector("[data-field=privateWeight]").value)});saveState();document.querySelector("#modal").close();toast("Stored privately");render();}
   if(e.target.id==="eventForm"){e.preventDefault();const inputs=e.target.querySelectorAll("[data-field]");const data={};inputs.forEach(x=>data[x.dataset.field]=coerce(x));if(!data.eventDate)return toast("Add a date for this milestone.");state.extraEvents.push({name:data.eventName||"Extra event",date:data.eventDate,notes:data.eventNotes});saveState();document.querySelector("#modal").close();toast("Event added");renderSettings();}
   if(e.target.id==="groceryForm"){e.preventDefault();const name=e.target.querySelector("[data-field=groceryName]").value.trim();if(name)state.groceries.push({name,done:false});saveState();document.querySelector("#modal").close();renderNutrition();}
@@ -1066,7 +1194,7 @@ document.addEventListener("submit",e=>{
   if(e.target.id==="creatorEventForm"){e.preventDefault();const data={};e.target.querySelectorAll("[data-field]").forEach(x=>data[x.dataset.field]=coerce(x));if(!data.creatorDate)return toast("Add a date for this creator milestone.");state.creatorEvents.push({name:data.creatorName||"Content milestone",date:data.creatorDate,notes:data.creatorNotes});saveState();document.querySelector("#modal").close();toast("Creator event saved");render();}
   if(e.target.id==="exerciseForm"){e.preventDefault();const name=e.target.querySelector("[data-field=exerciseName]").value.trim();const selected=workoutDay===null?workoutIndex():workoutDay;if(name)(state.customExercises[selected]||=[]).push(name);saveState();document.querySelector("#modal").close();renderWorkouts();}
 });
-function openDayModal(date) { const log=state.daily[date], day=daysBetween(state.settings.startDate,date)+1; modal(`<div class="modal-body"><p class="eyebrow">${day<=45?`DAY ${day}`:"BLAST FEST BUFFER"} · ${formatDate(date)}</p><h2>${log&&hasLogData(log)?"Logged day":"No log yet"}</h2>${log&&hasLogData(log)?`<div class="compare-grid"><div class="compare-card"><span class="tiny">Water</span><strong>${num(log.water)} oz</strong></div><div class="compare-card"><span class="tiny">Protein</span><strong>${num(log.protein)}g</strong></div><div class="compare-card"><span class="tiny">Steps</span><strong>${num(log.steps)}</strong></div><div class="compare-card"><span class="tiny">Score</span><strong>${score(log)}</strong></div></div><p class="muted">${log.notes||"No notes added."}</p>`:`<p class="muted">Nothing logged for this date yet.</p>`}<div class="modal-actions"><button class="secondary-button" data-close>Close</button></div></div>`); }
+function openDayModal(date) { const log=state.daily[date], day=daysBetween(state.settings.startDate,date)+1; modal(`<div class="modal-body"><p class="eyebrow">${day<=45?`DAY ${day}`:`EVENT RUNWAY ${day-45}`} · ${formatDate(date)}</p><h2>${log&&hasLogData(log)?"Logged day":"No log yet"}</h2>${log&&hasLogData(log)?`<div class="compare-grid"><div class="compare-card"><span class="tiny">Water</span><strong>${num(log.water)} oz</strong></div><div class="compare-card"><span class="tiny">Protein</span><strong>${num(log.protein)}g</strong></div><div class="compare-card"><span class="tiny">Steps</span><strong>${num(log.steps)}</strong></div><div class="compare-card"><span class="tiny">Score</span><strong>${score(log)}</strong></div></div><p class="muted">${log.notes||"No notes added."}</p>`:`<p class="muted">Nothing logged for this date yet.</p>`}<div class="modal-actions"><button class="secondary-button" data-close>Close</button></div></div>`); }
 
 function startDictation(fieldId) {
   const SpeechRecognition=window.SpeechRecognition||window.webkitSpeechRecognition;
